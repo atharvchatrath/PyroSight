@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import random
+import math
 
 # Configuration
 YOLO_MODEL = 'yolov8s-world.pt'
@@ -11,15 +12,58 @@ FOCAL_LENGTH = 800
 PERSON_HEIGHT_INCHES = 66
 DOOR_HEIGHT_INCHES = 80
 
-# HSV color range for bright orange/yellow (Fire simulation)
-LOWER_FIRE = np.array([10, 150, 150])
-UPPER_FIRE = np.array([40, 255, 255])
-
 def get_distance(real_height_inches, bbox_height_pixels):
     if bbox_height_pixels == 0:
         return -1
     distance_ft = (real_height_inches * FOCAL_LENGTH) / bbox_height_pixels / 12
     return distance_ft
+
+def bezier_curve(p0, p1, p2, num_points=50):
+    points = []
+    for t in np.linspace(0, 1, num_points):
+        x = int((1 - t)**2 * p0[0] + 2 * (1 - t) * t * p1[0] + t**2 * p2[0])
+        y = int((1 - t)**2 * p0[1] + 2 * (1 - t) * t * p1[1] + t**2 * p2[1])
+        points.append((x, y))
+    return points
+
+def draw_chevrons_on_curve(img, curve_points, color=(0, 255, 0), chevron_count=12):
+    if len(curve_points) < 2: return
+    
+    step = len(curve_points) // chevron_count
+    if step == 0: step = 1
+    
+    # Draw the underlying curve lightly
+    pts = np.array(curve_points, np.int32).reshape((-1, 1, 2))
+    cv2.polylines(img, [pts], isClosed=False, color=(0, 50, 0), thickness=8)
+    
+    for i in range(0, len(curve_points) - 1, step):
+        pt1 = curve_points[i]
+        pt2 = curve_points[min(i + 3, len(curve_points)-1)]
+        
+        dx = pt2[0] - pt1[0]
+        dy = pt2[1] - pt1[1]
+        theta = math.atan2(dy, dx)
+        
+        y_val = pt1[1]
+        size = int(max(10, y_val / 18)) 
+        
+        alpha = math.pi / 4 # 45 degree spread
+        
+        tip = (pt1[0] + int(math.cos(theta) * size), pt1[1] + int(math.sin(theta) * size))
+        
+        l_angle = theta - alpha + math.pi
+        left_pt = (tip[0] + int(math.cos(l_angle) * size * 1.5), tip[1] + int(math.sin(l_angle) * size * 1.5))
+        
+        r_angle = theta + alpha + math.pi
+        right_pt = (tip[0] + int(math.cos(r_angle) * size * 1.5), tip[1] + int(math.sin(r_angle) * size * 1.5))
+        
+        c_pts = np.array([left_pt, tip, right_pt], np.int32).reshape((-1, 1, 2))
+        
+        # Black outline
+        cv2.polylines(img, [c_pts], isClosed=False, color=(0, 0, 0), thickness=size//2 + 4)
+        # Inner glow
+        cv2.polylines(img, [c_pts], isClosed=False, color=(150, 255, 150), thickness=size//2)
+        cv2.polylines(img, [c_pts], isClosed=False, color=color, thickness=size//2 - 2)
 
 def draw_hud_box(img, x1, y1, x2, y2, color, label, thickness=2, distance=None):
     # CRITICAL: Fix OpenCV float crash by casting to integers
@@ -59,7 +103,7 @@ def main():
     print("[INIT] Loading YOLOv8-World Model...", flush=True)
     model = YOLO(YOLO_MODEL)
     print("[INIT] Setting custom AI vocabulary for robust detection...", flush=True)
-    model.set_classes(["person", "door", "doorway", "exit"])
+    model.set_classes(["person", "door", "doorway", "exit", "fire", "flame"])
     
     print("[INIT] Opening Webcam... (Trying index 0)", flush=True)
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -87,11 +131,12 @@ def main():
         overlay = frame.copy()
         
         # 1. AI Object Detection
-        # Force threshold to 0.15 to catch partial doors
-        results = model(frame, conf=0.15, verbose=False)
+        # Increased threshold significantly to 0.35 to prevent hallucinating bookshelves/shirts
+        results = model(frame, conf=0.35, verbose=False)
         
         doors_detected = []
         persons_detected = []
+        fire_hazards = []
         
         for r in results:
             for box in r.boxes:
@@ -104,25 +149,15 @@ def main():
                 if cls_name == 'person':
                     dist = get_distance(PERSON_HEIGHT_INCHES, bbox_height_pixels)
                     persons_detected.append({'box': (x1, y1, x2, y2), 'dist': dist})
-                elif cls_name in ['door', 'doorway', 'exit']:
+                elif cls_name in ["door", "doorway", "exit"]:
                     dist = get_distance(DOOR_HEIGHT_INCHES, bbox_height_pixels)
                     doors_detected.append({'box': (x1, y1, x2, y2), 'dist': dist})
+                elif cls_name in ["fire", "flame"]:
+                    w = x2 - x1
+                    h = y2 - y1
+                    fire_hazards.append((int(x1), int(y1), int(w), int(h)))
 
-        # 2. Fire Hazard Simulation
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, LOWER_FIRE, UPPER_FIRE)
-        kernel = np.ones((5,5), np.uint8)
-        mask = cv2.erode(mask, kernel, iterations=1)
-        mask = cv2.dilate(mask, kernel, iterations=2)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        fire_hazards = []
-        for cnt in contours:
-            if cv2.contourArea(cnt) > 2000:
-                x, y, w, h = cv2.boundingRect(cnt)
-                # Cast to int for safety
-                fire_hazards.append((int(x), int(y), int(w), int(h)))
-
+        # 2. Fire Hazard Simulation (Temperature only now, detection is AI-based)
         if fire_hazards:
             current_temp = min(1100, current_temp + random.randint(10, 50))
         else:
@@ -142,45 +177,42 @@ def main():
             draw_hud_box(frame, x1, y1, x2, y2, (255, 255, 0), "PERSON", distance=p['dist'])
 
         # 5. Draw Doors & AR Navigation Route
-        for d in doors_detected:
+        # Lock onto ONLY the largest door to prevent sensor confusion
+        if doors_detected:
+            doors_detected.sort(key=lambda d: (d['box'][2] - d['box'][0]) * (d['box'][3] - d['box'][1]), reverse=True)
+            d = doors_detected[0] # Target locked
+            
             x1, y1, x2, y2 = d['box']
-            draw_hud_box(frame, x1, y1, x2, y2, (0, 255, 0), "EXIT DOOR", distance=d['dist'])
+            draw_hud_box(frame, x1, y1, x2, y2, (0, 255, 0), "EXIT LOCKED", distance=d['dist'])
             
             # Start exactly at bottom center of screen
             start_pt = (int(w_frame / 2), int(h_frame))
             # End at bottom center of door
             end_pt = (int((x1 + x2) / 2), int(y2))
             
-            # Obstacle Avoidance logic
-            path_points = [start_pt, end_pt]
+            # Default control point
+            ctrl_pt = ((start_pt[0] + end_pt[0]) // 2, (start_pt[1] + end_pt[1]) // 2)
             
+            # Obstacle Avoidance logic (Fire)
             for (hx, hy, hw, hh) in fire_hazards:
                 if line_intersects_rect(start_pt, end_pt, (hx, hy, hw, hh)):
                     hazard_cx = hx + hw // 2
                     shift_amount = hw + 100
-                    # Shift left or right
-                    if (start_pt[0] + end_pt[0]) // 2 < hazard_cx:
-                        mid_x = hazard_cx - shift_amount
+                    if ctrl_pt[0] < hazard_cx:
+                        ctrl_pt = (hazard_cx - shift_amount, ctrl_pt[1])
                     else:
-                        mid_x = hazard_cx + shift_amount
-                    mid_y = int(hy + hh / 2) # mid point in y
-                    
-                    mid_pt = (int(mid_x), int(mid_y))
-                    path_points = [start_pt, mid_pt, end_pt]
+                        ctrl_pt = (hazard_cx + shift_amount, ctrl_pt[1])
                     break 
 
             # Draw the path
-            for i in range(len(path_points) - 1):
-                pt1 = path_points[i]
-                pt2 = path_points[i+1]
-                cv2.line(overlay, pt1, pt2, (0, 255, 0), 8)
-                cv2.line(overlay, pt1, pt2, (150, 255, 150), 3)
+            curve = bezier_curve(start_pt, ctrl_pt, end_pt)
+            draw_chevrons_on_curve(overlay, curve)
 
         alpha = 0.6
         frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
 
-        cv2.putText(frame, "PyroSight v3.0", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
-        cv2.putText(frame, "MODE: ROBUST ROUTING", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        cv2.putText(frame, "PyroSight v4.0", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+        cv2.putText(frame, "MODE: AI SENSOR LOCK", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
         
         cv2.imshow("PyroSight Prototype", frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
