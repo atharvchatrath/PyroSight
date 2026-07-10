@@ -1,5 +1,7 @@
 venv/
+.venv/
 __pycache__/
 *.pt
 *.onnx
 .vscode/
+pyrosight_*.png
