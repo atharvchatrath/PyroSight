@@ -1061,7 +1061,7 @@ class HUD:
             self._glow(img,f"BRG {abs(brg):.0f}deg {'R' if brg>=0 else 'L'}",(12,y),0.40,C_GREEN,1); y+=20
 
         # Key hint
-        self._glow(img,"q r x v a n m p f s",(10,H-14),0.32,C_DIM,1)
+        self._glow(img,"q r x v a n m p f s t",(10,H-14),0.32,C_DIM,1)
 
     # -------------------------------------------------------------------------
     # Alert banner
@@ -1160,11 +1160,30 @@ def main():
     if not camera.start(): print("[FATAL] No camera.",flush=True); return 1
 
     show_nav=True; show_mask=False; mirror=args.mirror; paused=False
-    smoke_on=False; nv=False
+    smoke_on=False; nv=False; fullscreen=False
     fps=0.0; last_t=time.time(); fc=0; dets=[]
     frame=None; haz=[]; fmask=None; geo_doors=[]; motion_blobs=[]; path_info=None
 
-    print("[v7.0 READY] q=quit r=rec x=smoke v=nv a=mute n=nav m=mask p=pause s=snap f=mirror",flush=True)
+    WIN_NAME="PyroSight v7.0 - Tactical HUD"
+    cv2.namedWindow(WIN_NAME, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WIN_NAME, 1280, 720)
+
+    def fit_to_window(img):
+        try:
+            _,_,ww,wh=cv2.getWindowImageRect(WIN_NAME)
+        except Exception:
+            ww,wh=0,0
+        h,w=img.shape[:2]
+        if ww<=0 or wh<=0 or (ww==w and wh==h): return img
+        scale=min(ww/w, wh/h)
+        nw,nh=max(1,int(round(w*scale))),max(1,int(round(h*scale)))
+        resized=cv2.resize(img,(nw,nh),interpolation=cv2.INTER_AREA if scale<1 else cv2.INTER_LINEAR)
+        canvas=np.zeros((wh,ww,3),np.uint8); canvas[:]=C_BG
+        xo,yo=(ww-nw)//2,(wh-nh)//2
+        canvas[yo:yo+nh, xo:xo+nw]=resized
+        return canvas
+
+    print("[v7.0 READY] q=quit r=rec x=smoke v=nv a=mute n=nav m=mask p=pause s=snap f=mirror t=fullscreen",flush=True)
 
     while True:
         t=time.time()
@@ -1285,13 +1304,17 @@ def main():
         disp=hud.scanlines(disp)
 
         if rec.recording: rec.write(disp)
-        cv2.imshow("PyroSight v7.0 - Tactical HUD",disp)
+        cv2.imshow(WIN_NAME,fit_to_window(disp))
         key=cv2.waitKey(1)&0xFF
         if key in(ord("q"),27): break
         elif key==ord("n"): show_nav=not show_nav
         elif key==ord("m"): show_mask=not show_mask
         elif key==ord("p"): paused=not paused
         elif key==ord("f"): mirror=not mirror
+        elif key==ord("t"):
+            fullscreen=not fullscreen
+            cv2.setWindowProperty(WIN_NAME, cv2.WND_PROP_FULLSCREEN,
+                                   cv2.WINDOW_FULLSCREEN if fullscreen else cv2.WINDOW_NORMAL)
         elif key==ord("x"):
             smoke_on=not smoke_on; print(f"[SMOKE]{'ON' if smoke_on else 'OFF'}",flush=True)
         elif key==ord("v"):
