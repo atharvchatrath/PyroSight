@@ -1,0 +1,20 @@
+# PyroSight helmet HUD — Chromium kiosk on the monocular OLED display.
+# The display connects over HDMI; cage + combiner optics mirror it to the eye.
+[Unit]
+Description=PyroSight helmet HUD (kiosk)
+After=graphical.target pyrosight-backend.service
+Wants=pyrosight-backend.service
+
+[Service]
+Type=simple
+User=pyrosight
+Environment=DISPLAY=:0
+# --force-dark-mode + kiosk + no first-run chrome; the HUD page handles the rest.
+ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars \
+    --force-dark-mode --disable-translate --no-first-run \
+    --app=http://localhost:3000/hud
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

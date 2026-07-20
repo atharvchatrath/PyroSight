@@ -1,0 +1,20 @@
+# PyroSight backend — cross-platform (macOS / Windows / Linux / Raspberry Pi OS)
+fastapi>=0.104
+uvicorn[standard]>=0.24
+pydantic>=2.4
+numpy>=1.24
+opencv-python>=4.8
+psutil>=5.9
+websockets>=11
+
+# Edge inference (optional but recommended; the detector chain degrades
+# gracefully if missing). On Raspberry Pi OS use the piwheels build.
+onnxruntime; platform_machine != "armv7l"
+
+# --- Optional extras -------------------------------------------------------
+# Dev-machine open-vocabulary detection (doors/exit signs via YOLO-World):
+#   pip install ultralytics
+# Offline speech-to-text on the Pi (see docs/DEPLOYMENT.md):
+#   pip install vosk sounddevice
+# Raspberry Pi hardware drivers (Pi only):
+#   pip install picamera2 adafruit-circuitpython-bno08x

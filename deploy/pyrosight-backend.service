@@ -1,0 +1,23 @@
+# PyroSight perception backend — systemd unit for Raspberry Pi 5.
+# Installed by deploy/install-pi.sh to /etc/systemd/system/.
+[Unit]
+Description=PyroSight perception backend
+After=network.target
+
+[Service]
+Type=simple
+User=pyrosight
+WorkingDirectory=/opt/pyrosight
+Environment=PYROSIGHT_MODE=live
+Environment=PYROSIGHT_TARGET_FPS=20
+Environment=PYROSIGHT_DETECT_INPUT=416
+ExecStart=/opt/pyrosight/.venv/bin/python /opt/pyrosight/backend/run.py
+Restart=always
+RestartSec=3
+# The engine is the mission-critical process: give it I/O + CPU priority.
+Nice=-5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=2
+
+[Install]
+WantedBy=multi-user.target

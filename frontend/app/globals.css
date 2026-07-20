@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+  background: #04070a;
+  color: #e8f0f6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Glove-friendly: everything clickable is at least 48px tall. */
+.btn {
+  @apply min-h-[48px] px-4 rounded border border-edge bg-panel text-bright
+    font-semibold tracking-wide select-none active:bg-edge
+    focus:outline-none focus:ring-2 focus:ring-accent;
+}
+
+.panel {
+  @apply rounded border border-edge bg-panel;
+}
+
+.panel-title {
+  @apply px-3 py-2 border-b border-edge text-[11px] font-bold tracking-[0.2em]
+    text-dim uppercase;
+}

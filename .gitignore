@@ -5,3 +5,15 @@ __pycache__/
 *.onnx
 .vscode/
 pyrosight_*.png
+
+# backend runtime artifacts
+backend/data/
+backend/models/
+backend/weights/
+
+# frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+*.tsbuildinfo

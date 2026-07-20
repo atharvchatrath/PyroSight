@@ -1,0 +1,15 @@
+# PyroSight web frontend (Next.js production server).
+[Unit]
+Description=PyroSight frontend
+After=network.target
+
+[Service]
+Type=simple
+User=pyrosight
+WorkingDirectory=/opt/pyrosight/frontend
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
