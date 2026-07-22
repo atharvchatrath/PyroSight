@@ -33,9 +33,11 @@ from ..config import DATA_DIR, PyroSightConfig
 from ..core.alerts import AlertEngine
 from ..core.diagnostics import Diagnostics
 from ..core.events import FrameStore, TelemetryHub
+from ..navigation.assistant import SmartAssistant
 from ..navigation.breadcrumbs import BreadcrumbTrail
 from ..navigation.guidance import GuidanceEngine
 from ..navigation.heading import HeadingFilter
+from ..navigation.search import SearchCoverage
 from ..peripherals.esp32 import Esp32Peripherals
 from ..recording.incidents import IncidentRecorder
 from ..sensors.imu import StaticIMU
@@ -106,7 +108,18 @@ class PerceptionEngine:
         self._cached_detections: List[Dict[str, Any]] = []
 
         # HUD preferences mutated by voice/dashboard commands.
-        self.prefs = {"primary_view": "fused", "highlight_doors": False}
+        self.prefs = {
+            "primary_view": "fused",
+            "highlight_doors": False,
+            "show_labels": True,
+            "brightness": 1.0,          # HUD gain, 0.6..1.5
+            "colorblind": False,        # deuteranopia-safe palette
+            "emergency": False,         # emergency mode (auto or manual)
+            "power_saving": False,
+        }
+        self._emergency_manual = False
+        self._search = SearchCoverage()
+        self.assistant = SmartAssistant()
 
     # ------------------------------------------------------------------
 
@@ -222,9 +235,49 @@ class PerceptionEngine:
         })
         self.recorder.log("live_switch", {"source": "browser_ingest"})
 
+    def _revert_to_sim(self) -> None:
+        """Runs ON THE ENGINE THREAD. Live camera feed died -> sim demo."""
+        from ..sensors.imu import SimulatedIMU
+        from ..sensors.rgb import SimulatedRGB
+        from ..sensors.thermal import SimulatedThermal
+        self._live_ingest_active = False
+        self._want_live_switch = False
+        s = self.config.sensors
+        rgb = SimulatedRGB(self.world, s.rgb_width, s.rgb_height)
+        rgb.start()
+        thermal = SimulatedThermal(self.world)
+        thermal.start()
+        imu = SimulatedIMU(self.world)
+        imu.start()
+        self.sensors.rgb = rgb
+        self.sensors.thermal = thermal
+        self.sensors.imu = imu
+        self.sensors.rgb_is_sim = True
+        self.sim_mode = True
+        # Fresh perception state; live tracks must not haunt the demo.
+        self.tracker = TemporalTracker(self.config.tracker, self.config.vision)
+        self.smoke = SmokeEstimator()
+        self.breadcrumbs = BreadcrumbTrail(self.config.nav.crumb_spacing_m)
+        self.guidance = GuidanceEngine(self.config.nav)
+        self.heading = HeadingFilter()
+        self._known_track_ids.clear()
+        self._cached_detections = []
+        self.hub.push_event("system", {
+            "severity": "warning",
+            "text": "CAMERA FEED LOST — SIM DEMO RESUMED (restart camera to go live)",
+        })
+        self.recorder.log("live_revert", {"reason": "browser feed stalled"})
+
     def _apply_commands(self) -> None:
         if self._want_live_switch and not self._live_ingest_active:
             self._perform_live_switch()
+        # Dead-feed failsafe: a browser camera that stops sending (tab
+        # closed, sleep, navigation in an old build) must never leave the
+        # system frozen on one stale frame — fall back to the sim demo and
+        # re-switch automatically when frames return.
+        if (self._live_ingest_active
+                and time.time() - self._browser_rgb._last_read_ts > 8.0):
+            self._revert_to_sim()
         while True:
             try:
                 cmd = self._commands.get_nowait()
@@ -233,12 +286,16 @@ class PerceptionEngine:
             intent = cmd["intent"]
             if intent == "FIND_EXIT":
                 self.guidance.set_objective("find_exit")
+                self._search.stop()
             elif intent == "LOCATE_VICTIM":
                 self.guidance.set_objective("locate_victim")
+                self._search.stop()
             elif intent == "RETURN_TO_ENTRY":
                 self.guidance.set_objective("return_to_entry")
+                self._search.stop()
             elif intent == "CLEAR_OBJECTIVE":
                 self.guidance.set_objective("explore")
+                self._search.stop()
             elif intent == "MARK_ENTRY":
                 self.breadcrumbs.mark_entry_here()
             elif intent == "SHOW_THERMAL":
@@ -247,6 +304,23 @@ class PerceptionEngine:
                 self.prefs["primary_view"] = "rgb"
             elif intent == "HIGHLIGHT_DOORS":
                 self.prefs["highlight_doors"] = not self.prefs["highlight_doors"]
+            elif intent == "HIDE_LABELS":
+                self.prefs["show_labels"] = False
+            elif intent == "SHOW_LABELS":
+                self.prefs["show_labels"] = True
+            elif intent == "BRIGHTNESS_UP":
+                self.prefs["brightness"] = round(
+                    min(1.5, self.prefs["brightness"] + 0.15), 2)
+            elif intent == "BRIGHTNESS_DOWN":
+                self.prefs["brightness"] = round(
+                    max(0.6, self.prefs["brightness"] - 0.15), 2)
+            elif intent == "EMERGENCY_MODE":
+                self._emergency_manual = True
+            elif intent == "EXIT_EMERGENCY":
+                self._emergency_manual = False
+            elif intent == "SEARCH_MODE":
+                self.guidance.set_objective("search")
+                self._search.start(self.breadcrumbs.position)
             elif intent == "REPEAT_ALERT":
                 if self.alerts.latest is not None:
                     self.hub.push_event("alert", dict(self.alerts.latest))
@@ -351,6 +425,15 @@ class PerceptionEngine:
             self.breadcrumbs.update_step(heading)
         nav = self.guidance.update(tracks, heading, self.breadcrumbs, w)
 
+        # ---- search coverage + smart assistant ----
+        self._search.update(self.breadcrumbs.position, heading)
+        smoke_vis = ("CALIBRATING" if self.smoke.calibrating
+                     else SmokeEstimator.visibility_label(smoke_density))
+        suggestion = self.assistant.update(tracks, nav, smoke_vis, heading)
+        if suggestion is not None:
+            self.hub.push_event("assistant", {"severity": "info",
+                                              "text": suggestion})
+
         # ---- diagnostics + alerts ----
         sensor_health = self.sensors.health()
         if self.sensors.thermal is None:
@@ -364,6 +447,26 @@ class PerceptionEngine:
                                        sensor_health, self.sim_mode)
         fired = self.alerts.evaluate(tracks, thermal_result, smoke_density,
                                      nav, diag)
+
+        # ---- emergency mode (manual OR auto on genuinely critical
+        # conditions) — a fire visible across the room is NOT an emergency;
+        # being cut off by one, a flashover-risk hotspot, blackout smoke, or
+        # a dying battery is. Keeping this specific avoids alarm fatigue. ----
+        auto_emergency = (
+            nav.get("status") == "BLOCKED"
+            or any(t["cls"] == "hotspot" and t.get("severity") == "critical"
+                   and t.get("thermal_confirmed") for t in tracks)
+            or (diag.get("battery_percent") is not None
+                and diag["battery_percent"] < 12)
+            or smoke_vis == "NEAR ZERO")
+        emergency = self._emergency_manual or auto_emergency
+        self.prefs["emergency"] = emergency
+        # Power-saving engages automatically on low battery.
+        self.prefs["power_saving"] = diag.get("power_state") in ("saver", "critical")
+        # Effective brightness: emergency forces a high-visibility floor.
+        eff_brightness = (max(self.prefs["brightness"], 1.35) if emergency
+                          else self.prefs["brightness"])
+
         fused_jpeg = self._publish_frames(rgb, temp_c, thermal_result)
         self.peripherals.heartbeat()
         for alert in fired:
@@ -409,8 +512,11 @@ class PerceptionEngine:
                 "cardinal": HeadingFilter.cardinal(heading),
             },
             "nav": nav,
+            "search": self._search.to_dict(),
+            "assistant": self.assistant.current,
+            "emergency": emergency,
             "diagnostics": diag,
-            "prefs": dict(self.prefs),
+            "prefs": {**self.prefs, "effective_brightness": round(eff_brightness, 2)},
             "last_alert": self.alerts.latest,
         })
 

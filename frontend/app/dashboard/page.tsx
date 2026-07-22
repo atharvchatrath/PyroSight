@@ -14,7 +14,9 @@ import {
   EventTimeline,
   HeatPanel,
   IncidentsPanel,
+  MissionReplayPanel,
   Panel,
+  SearchPanel,
   SensorPanel,
 } from "@/components/dashboard/Panels";
 import { missionClock } from "@/lib/format";
@@ -46,9 +48,17 @@ export default function DashboardPage() {
               {state.mode.toUpperCase()} · {state.detector.toUpperCase()} ·{" "}
               {state.fps.toFixed(0)} FPS
             </span>
+            {state.emergency && (
+              <span className="text-xs px-2 py-1 rounded bg-danger text-ink font-bold tracking-widest animate-alarm">
+                ⚠ EMERGENCY MODE
+              </span>
+            )}
             <span className="ml-auto text-lg font-bold text-bright">
               {missionClock(state.mission_time_s)}
             </span>
+            <Link href="/live" className="btn text-xs">
+              LIVE CAM →
+            </Link>
             <Link href="/hud" className="btn text-xs">
               HUD VIEW →
             </Link>
@@ -92,15 +102,19 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* history + navigation row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Panel title="Alert History" className="max-h-64">
-              <EventTimeline events={events} kinds={["alert"]} />
-            </Panel>
-            <Panel title="Recorded Incidents" className="max-h-64">
-              <IncidentsPanel />
-            </Panel>
-            <Panel title="Navigation — position &amp; trail" className="max-h-64">
+          {/* smart AI assistant strip */}
+          {state.assistant && (
+            <div className="panel px-4 py-2 flex items-center gap-3">
+              <span className="text-accent text-xs font-bold tracking-widest">
+                💬 ASSISTANT
+              </span>
+              <span className="text-bright">{state.assistant}</span>
+            </div>
+          )}
+
+          {/* navigation + search + replay row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <Panel title="Firefighter Orientation &amp; Trail" className="max-h-72">
               <div className="flex items-start gap-3">
                 <MiniMap state={state} />
                 <div className="text-xs text-dim space-y-1 pt-1">
@@ -108,13 +122,31 @@ export default function DashboardPage() {
                     {state.nav.instruction}
                   </div>
                   <div>OBJECTIVE {state.nav.objective.toUpperCase()}</div>
-                  <div>HEADING {Math.round(state.heading.deg)}° {state.heading.cardinal}</div>
+                  <div>
+                    HEADING {Math.round(state.heading.deg)}° {state.heading.cardinal}
+                  </div>
                   <div>CRUMBS {state.nav.breadcrumbs.count}</div>
                   {state.nav.entry_distance_ft != null && (
                     <div>ENTRY {state.nav.entry_distance_ft} FT</div>
                   )}
                 </div>
               </div>
+            </Panel>
+            <Panel title="Search Mode — room coverage" className="max-h-72">
+              <SearchPanel state={state} />
+            </Panel>
+            <Panel title="Mission Replay / Training" className="max-h-72">
+              <MissionReplayPanel />
+            </Panel>
+          </div>
+
+          {/* history row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Panel title="Alert History" className="max-h-56">
+              <EventTimeline events={events} kinds={["alert"]} />
+            </Panel>
+            <Panel title="Recorded Incidents (auto-logged)" className="max-h-56">
+              <IncidentsPanel />
             </Panel>
           </div>
 

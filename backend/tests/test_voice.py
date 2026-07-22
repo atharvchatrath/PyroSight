@@ -29,8 +29,20 @@ def test_specificity_wins():
     assert match("repeat that alert")["intent"] == "REPEAT_ALERT"
 
 
+def test_new_commands():
+    assert match("hide labels")["intent"] == "HIDE_LABELS"
+    assert match("increase brightness")["intent"] == "BRIGHTNESS_UP"
+    assert match("lower brightness")["intent"] == "BRIGHTNESS_DOWN"
+    assert match("emergency mode")["intent"] == "EMERGENCY_MODE"
+    assert match("mayday")["intent"] == "EMERGENCY_MODE"
+    assert match("cancel emergency")["intent"] == "EXIT_EMERGENCY"
+    assert match("search room")["intent"] == "SEARCH_MODE"
+    assert match("locate person")["intent"] == "LOCATE_VICTIM"
+
+
 def test_unrecognized_and_catalog():
     assert match("make me a sandwich") is None
     assert match("") is None
     intents = {c["intent"] for c in available_commands()}
-    assert "FIND_EXIT" in intents and len(intents) == 10
+    assert "FIND_EXIT" in intents and "EMERGENCY_MODE" in intents
+    assert len(intents) == 16

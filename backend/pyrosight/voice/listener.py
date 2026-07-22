@@ -30,7 +30,10 @@ VOCAB = [
     "find", "exit", "locate", "victim", "person", "show", "thermal",
     "camera", "visual", "highlight", "doors", "door", "repeat", "last",
     "alert", "return", "entry", "mark", "back", "status", "report",
-    "stand", "down", "clear", "way", "out", "[unk]",
+    "stand", "down", "clear", "way", "out",
+    "hide", "labels", "label", "increase", "lower", "brightness",
+    "brighter", "dimmer", "dim", "emergency", "mode", "mayday", "cancel",
+    "search", "room", "guided", "[unk]",
 ]
 
 

@@ -13,16 +13,17 @@ const STATUS_COLOR: Record<NavState["status"], string> = {
   BLOCKED: "#f87171",
 };
 
-export default function NavArrow({ nav }: { nav: NavState }) {
+export default function NavArrow({ nav, big = false }: { nav: NavState; big?: boolean }) {
   const target = nav.target;
   if (!target) return null;
   const color = STATUS_COLOR[nav.status];
   const rel = target.rel_bearing_deg;
   const uturn = Math.abs(rel) >= 150;
+  const dim = big ? 150 : 110;
 
   return (
     <div className="flex flex-col items-center gap-1 pointer-events-none">
-      <svg width="110" height="110" viewBox="-55 -55 110 110">
+      <svg width={dim} height={dim} viewBox="-55 -55 110 110">
         {uturn ? (
           <g stroke={color} strokeWidth="9" fill="none" strokeLinecap="round">
             <path d="M -18 30 L -18 -8 A 18 18 0 0 1 18 -8 L 18 6" />

@@ -42,7 +42,10 @@ class AlertEngine:
         # POSSIBLE FIRE; a "possible" tier never sounds an alarm — showing
         # a dashed box on the HUD is enough. False alarms teach operators
         # to ignore the banner, which is the deadliest failure mode.
-        fires = [t for t in tracks if t["cls"] == "fire"]
+        # Only CORROBORATED fire (thermal hotspot or flame flicker) sounds an
+        # alarm. An uncorroborated neural "possible fire" is shown on the HUD
+        # but never alarms — a false fire siren is never acceptable.
+        fires = [t for t in tracks if t["cls"] == "fire" and t.get("corroborated")]
         if fires:
             worst = max(fires, key=lambda t: t["conf"])
             temp = worst.get("max_temp_c")
@@ -51,7 +54,7 @@ class AlertEngine:
                 alerts.append(self._fire(
                     "fire_detected", "critical",
                     f"FIRE{temp_txt} — {int(worst['conf'] * 100)}%"))
-            elif worst["tier"] == "likely":
+            else:
                 alerts.append(self._fire(
                     "fire_detected", "warning",
                     f"POSSIBLE FIRE{temp_txt} — {int(worst['conf'] * 100)}%"))

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { UplinkProvider } from "@/lib/uplink";
 
 export const metadata: Metadata = {
   title: "PyroSight",
@@ -12,7 +13,9 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className="font-mono">{children}</body>
+      <body className="font-mono">
+        <UplinkProvider>{children}</UplinkProvider>
+      </body>
     </html>
   );
 }

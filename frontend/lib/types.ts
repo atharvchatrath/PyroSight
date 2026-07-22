@@ -11,6 +11,7 @@ export interface Track {
   conf: number;
   tier: "confirmed" | "likely" | "possible";
   thermal_confirmed: boolean;
+  corroborated?: boolean;
   max_temp_c: number | null;
   severity: string | null;
   dist_ft: number | null;
@@ -54,12 +55,36 @@ export interface SensorHealth {
 export interface Diagnostics {
   cpu_percent: number | null;
   mem_percent: number | null;
+  disk_percent: number | null;
   cpu_temp_c: number | null;
   battery_percent: number | null;
+  runtime_min: number | null;
+  power_state: "normal" | "saver" | "critical" | "unknown";
   fps: number;
   latency_ms: number;
   uptime_s: number;
   sensors: Record<string, SensorHealth>;
+}
+
+export interface SearchCoverage {
+  active: boolean;
+  explored_cells: number;
+  partial_cells: number;
+  coverage_pct: number;
+  needs_pass: number;
+  cell_m?: number;
+  cells: { x: number; y: number; level: 1 | 2 }[];
+}
+
+export interface HudPrefs {
+  primary_view: "rgb" | "thermal" | "fused";
+  highlight_doors: boolean;
+  show_labels: boolean;
+  brightness: number;
+  colorblind: boolean;
+  emergency: boolean;
+  power_saving: boolean;
+  effective_brightness: number;
 }
 
 export interface Hotspot {
@@ -91,15 +116,18 @@ export interface SystemState {
   smoke: { density: number; visibility: string };
   heading: { deg: number; cardinal: string };
   nav: NavState;
+  search: SearchCoverage;
+  assistant: string | null;
+  emergency: boolean;
   diagnostics: Diagnostics;
-  prefs: { primary_view: "rgb" | "thermal" | "fused"; highlight_doors: boolean };
+  prefs: HudPrefs;
   last_alert: { rule: string; severity: string; text: string; ts: number } | null;
 }
 
 export interface TelemetryEvent {
   seq: number;
   ts: number;
-  kind: "alert" | "detection" | "command" | "system";
+  kind: "alert" | "detection" | "command" | "system" | "assistant";
   severity?: "critical" | "warning" | "info";
   text?: string;
   ack?: string;

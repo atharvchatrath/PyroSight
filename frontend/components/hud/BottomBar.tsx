@@ -9,6 +9,7 @@ const OBJECTIVE_LABEL: Record<string, string> = {
   find_exit: "FIND EXIT",
   locate_victim: "LOCATE VICTIM",
   return_to_entry: "RETURN TO ENTRY",
+  search: "GUIDED SEARCH",
 };
 
 export default function BottomBar({ state }: { state: SystemState }) {

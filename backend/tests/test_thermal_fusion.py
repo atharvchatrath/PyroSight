@@ -50,15 +50,54 @@ def test_fusion_thermal_confirms_person():
     assert p["conf"] > 0.60
 
 
-def test_fusion_unconfirmed_fire_capped_and_hotspot_promoted():
+def test_hsv_color_alone_never_creates_fire():
+    """The life-safety rule: HSV flame-color alone (the webcam false-fire
+    trap — skin, warm light, screen glow) NEVER creates a fire track. Only
+    the neural detector can, with color/thermal as corroboration."""
+    thermal = {"hotspots": [], "body_regions": []}
+    hsv_only = [{"cls": "fire", "conf": 0.6, "box": [10, 10, 60, 60],
+                 "source": "hsv", "flicker": 0.2}]
+    fused = fuse([], hsv_only, thermal, (640, 480), (160, 120))
+    assert not any(d["cls"] == "fire" for d in fused)
+
+
+def test_neural_fire_uncorroborated_is_possible_not_alarmed():
+    """A neural fire with no flicker/thermal support is shown as an honest
+    POSSIBLE fire (capped below the confirmed tier) — never dropped (so real
+    fire still surfaces), but marked uncorroborated so it does not alarm."""
+    thermal = {"hotspots": [], "body_regions": []}
+    neural_fire = {"cls": "fire", "conf": 0.9, "box": [100, 100, 200, 260]}
+    fused = fuse([neural_fire], [], thermal, (640, 480), (160, 120))
+    fire = next(d for d in fused if d["cls"] == "fire")
+    assert fire["thermal_confirmed"] is False
+    assert fire["rgb_corroborated"] is False
+    assert fire["conf"] <= 0.55  # possible tier, no alarm
+
+    # A weak neural guess below the floor is dropped outright.
+    weak = {"cls": "fire", "conf": 0.2, "box": [10, 10, 60, 60]}
+    assert not any(d["cls"] == "fire"
+                   for d in fuse([weak], [], thermal, (640, 480), (160, 120)))
+
+
+def test_fire_confirmed_by_two_rgb_sources():
+    """Neural fire + flickering flame region at the same place -> trusted
+    (the honest RGB-only path). This is the ONLY way fire shows without a
+    thermal camera."""
+    thermal = {"hotspots": [], "body_regions": []}
+    neural_fire = {"cls": "fire", "conf": 0.7, "box": [100, 100, 200, 260]}
+    flicker = [{"cls": "fire", "conf": 0.6, "box": [110, 110, 190, 250],
+                "source": "hsv", "flicker": 0.12, "white_core_px": 20}]
+    fused = fuse([neural_fire], flicker, thermal, (640, 480), (160, 120))
+    fire = next(d for d in fused if d["cls"] == "fire")
+    assert fire["rgb_corroborated"] is True
+
+
+def test_thermal_hotspot_promoted():
     thermal = {"hotspots": [{"box": [100, 20, 130, 50], "max_temp_c": 500.0,
                              "mean_temp_c": 400.0, "area_px": 500,
                              "severity": "critical"}],
                "body_regions": []}
-    fake_fire = {"cls": "fire", "conf": 0.9, "box": [10, 10, 60, 60]}  # no heat
-    fused = fuse([fake_fire], [], thermal, (640, 480), (160, 120))
-    fire = next(d for d in fused if d["cls"] == "fire")
-    assert fire["conf"] <= 0.60          # capped: no thermal support
+    fused = fuse([], [], thermal, (640, 480), (160, 120))
     hot = next(d for d in fused if d["cls"] == "hotspot")
     assert hot["thermal_confirmed"] and hot["conf"] >= 0.9
 
@@ -79,9 +118,14 @@ def test_dependent_thermal_never_self_confirms():
     fused = fuse([person, fire], [], thermal, (640, 480), (160, 120),
                  thermal_independent=False)
     p = next(d for d in fused if d["cls"] == "person")
-    f = next(d for d in fused if d["cls"] == "fire")
+    # Person: derived thermal gives no confidence boost or confirmation.
     assert p["thermal_confirmed"] is False and p["conf"] == 0.60
-    assert f["thermal_confirmed"] is False and f["conf"] <= 0.55
+    # Fire: derived thermal is NOT corroboration, so the fire stays an
+    # uncorroborated POSSIBLE (never self-confirmed into an alarm).
+    fire_out = next(d for d in fused if d["cls"] == "fire")
+    assert fire_out["thermal_confirmed"] is False
+    assert fire_out["rgb_corroborated"] is False
+    assert fire_out["conf"] <= 0.55
     # No hotspot promotion from a derived field.
     assert not any(d["cls"] == "hotspot" for d in fused)
 

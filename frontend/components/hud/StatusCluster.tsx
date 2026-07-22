@@ -38,11 +38,17 @@ export default function StatusCluster({ state }: { state: SystemState }) {
       <div className="flex gap-3">
         <span className={batteryColor}>
           BAT {battery != null ? `${Math.round(battery)}%` : "—"}
+          {d.runtime_min != null && (
+            <span className="text-dim text-xs ml-1">~{d.runtime_min}m</span>
+          )}
         </span>
         <span className={state.fps >= 12 ? "text-ok" : "text-warn"}>
           {state.fps.toFixed(0)} FPS
         </span>
       </div>
+      {d.power_state === "saver" && (
+        <div className="text-warn text-xs">⚡ POWER SAVER</div>
+      )}
       <div className="flex gap-3">
         {Object.entries(d.sensors).map(([kind, s]) => (
           <span key={kind} className={statusColor(s.status)}>

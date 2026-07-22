@@ -22,7 +22,10 @@ from .thermal_analysis import ThermalAnalyzer
 PERSON_CLASSES = ("person", "firefighter")
 PERSON_BOOST = 0.12
 FIRE_BOOST = 0.18
-UNCONFIRMED_FIRE_CAP = 0.55  # below confirmed tier: renders as uncertain
+# Uncorroborated neural fire is capped into the POSSIBLE tier (< 0.50) so it
+# always renders as a dashed "POSSIBLE FIRE" — visibly uncertain, never a
+# confident claim, and never alarms.
+UNCONFIRMED_FIRE_CAP = 0.48
 
 
 def _iou(a: List[float], b: List[float]) -> float:
@@ -66,20 +69,28 @@ def fuse(detections: List[Dict[str, Any]],
         for b in thermal.get("body_regions", [])
     ]
 
-    # --- merge HSV fire regions into the detection list (dedupe by IoU) ---
-    all_dets = [dict(d) for d in detections]
-    for fr in fire_regions:
-        dup = next((d for d in all_dets
-                    if d["cls"] == "fire" and _iou(d["box"], fr["box"]) > 0.3), None)
-        if dup is not None:
-            dup["conf"] = max(dup["conf"], fr["conf"])
-            dup["hsv_confirmed"] = True
-        else:
-            all_dets.append(dict(fr))
+    # --- FIRE evidence policy (precision-first, but still detects real fire):
+    #   * The NEURAL detector is the semantic authority for fire. It does not
+    #     confuse people, windows, or orange objects for flames the way a
+    #     color threshold does, so a neural "fire" detection is trusted and
+    #     shown (subject to a confidence floor + multi-frame confirmation).
+    #   * HSV flame-color ALONE never creates a fire track — that is the
+    #     classic webcam false-fire trap (skin, warm light, screen glow).
+    #     It only ever CORROBORATES a neural fire at the same location.
+    #   * Corroboration — a flickering flame region (color+motion) or a real
+    #     thermal hotspot — promotes fire to the confirmed tier and unlocks
+    #     the critical alarm. Uncorroborated neural fire shows as POSSIBLE
+    #     FIRE only, and never sounds the alarm.
+    flicker_regions = [fr for fr in fire_regions
+                       if fr.get("flicker", 0.0) >= 0.04
+                       or fr.get("white_core_px", 0) >= 6]
+    NEURAL_FIRE_FLOOR = 0.40
 
+    all_dets = [dict(d) for d in detections]
     matched_hotspots = set()
     for det in all_dets:
         det.setdefault("thermal_confirmed", False)
+        det.setdefault("rgb_corroborated", False)
         cls = det["cls"]
         if cls in PERSON_CLASSES and thermal_independent:
             for bb in body_boxes_rgb:
@@ -87,23 +98,35 @@ def fuse(detections: List[Dict[str, Any]],
                     det["thermal_confirmed"] = True
                     det["conf"] = min(0.99, det["conf"] + PERSON_BOOST)
                     break
+            fused.append(det)
         elif cls == "fire":
-            supported = False
+            if det.get("source") == "hsv":
+                continue  # color alone never creates fire
+            if det["conf"] < NEURAL_FIRE_FLOOR:
+                continue  # weak neural guess: drop
             if thermal_independent:
                 for i, (hb, spot) in enumerate(hotspot_boxes_rgb):
                     if _iou(hb, det["box"]) > 0.1 or _overlap_frac(hb, det["box"]) > 0.4:
-                        supported = True
-                        matched_hotspots.add(i)
+                        det["thermal_confirmed"] = True
                         det["max_temp_c"] = spot["max_temp_c"]
+                        matched_hotspots.add(i)
                         break
-            if supported:
-                det["thermal_confirmed"] = True
+            for fr in flicker_regions:
+                if (_iou(det["box"], fr["box"]) > 0.15
+                        or _overlap_frac(fr["box"], det["box"]) > 0.4):
+                    det["rgb_corroborated"] = True
+                    det["flicker"] = fr.get("flicker")
+                    break
+            if det["thermal_confirmed"]:
                 det["conf"] = min(0.99, det["conf"] + FIRE_BOOST)
+            elif det["rgb_corroborated"]:
+                det["conf"] = min(0.90, det["conf"] + 0.10)
             else:
-                # Without independent heat evidence, color+flicker alone
-                # never reaches the confirmed tier.
+                # Neural-only fire: honest but unconfirmed -> POSSIBLE tier.
                 det["conf"] = min(det["conf"], UNCONFIRMED_FIRE_CAP)
-        fused.append(det)
+            fused.append(det)
+        else:
+            fused.append(det)
 
     # --- unmatched hotspots become first-class detections (measured
     # thermal only: an RGB-derived field would just re-emit the same

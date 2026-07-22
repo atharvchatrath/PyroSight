@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+from ..config import DATA_DIR
 
 try:
     import psutil
@@ -36,6 +38,7 @@ class Diagnostics:
         self._boot_ts = time.time()
         # Simulated battery for SITL demos: drains ~1% / 45 s from 98%.
         self._sim_battery_start = 98.0
+        self._batt_history: List[Tuple[float, float]] = []
 
     def sample(self, fps: float, latency_ms: float,
                sensor_health: Dict[str, Dict[str, Any]],
@@ -52,18 +55,54 @@ class Diagnostics:
         return out
 
     def _collect(self, sim_mode: bool) -> Dict[str, Any]:
-        cpu = mem = None
+        cpu = mem = disk = None
         if PSUTIL_AVAILABLE:
             cpu = psutil.cpu_percent(interval=None)
             mem = psutil.virtual_memory().percent
+            try:
+                disk = psutil.disk_usage(str(DATA_DIR.parent)).percent
+            except (OSError, ValueError):
+                disk = None
         temp = _pi_cpu_temp_c()
         battery = self._battery(sim_mode)
+        runtime_min = self._runtime_estimate(battery)
         return {
             "cpu_percent": cpu,
             "mem_percent": mem,
+            "disk_percent": disk,
             "cpu_temp_c": temp,
             "battery_percent": battery,
+            "runtime_min": runtime_min,
+            "power_state": self._power_state(battery),
         }
+
+    def _runtime_estimate(self, battery: Optional[float]) -> Optional[int]:
+        """Estimate minutes remaining from the observed battery drain rate."""
+        if battery is None:
+            return None
+        now = time.time()
+        self._batt_history.append((now, battery))
+        self._batt_history = [(t, b) for (t, b) in self._batt_history
+                              if now - t <= 300.0]
+        if len(self._batt_history) < 2:
+            return None
+        (t0, b0), (t1, b1) = self._batt_history[0], self._batt_history[-1]
+        dt_min = (t1 - t0) / 60.0
+        drained = b0 - b1
+        if dt_min < 0.3 or drained <= 0.05:
+            return None
+        rate = drained / dt_min  # %/min
+        return int(max(0.0, battery / rate)) if rate > 0 else None
+
+    @staticmethod
+    def _power_state(battery: Optional[float]) -> str:
+        if battery is None:
+            return "unknown"
+        if battery < 12:
+            return "critical"
+        if battery < 25:
+            return "saver"
+        return "normal"
 
     def _battery(self, sim_mode: bool) -> Optional[float]:
         if PSUTIL_AVAILABLE:

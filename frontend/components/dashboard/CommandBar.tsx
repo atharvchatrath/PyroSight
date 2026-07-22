@@ -7,15 +7,21 @@
 
 import { useCallback, useRef, useState } from "react";
 
-const QUICK: { label: string; text: string }[] = [
+const QUICK: { label: string; text: string; danger?: boolean }[] = [
   { label: "FIND EXIT", text: "find exit" },
-  { label: "LOCATE VICTIM", text: "locate victim" },
+  { label: "LOCATE PERSON", text: "locate person" },
+  { label: "SEARCH ROOM", text: "search room" },
+  { label: "RETURN TO ENTRY", text: "return to entry" },
   { label: "SHOW THERMAL", text: "show thermal" },
   { label: "SHOW CAMERA", text: "show camera" },
   { label: "HIGHLIGHT DOORS", text: "highlight doors" },
-  { label: "RETURN TO ENTRY", text: "return to entry" },
+  { label: "HIDE LABELS", text: "hide labels" },
+  { label: "BRIGHTER", text: "increase brightness" },
+  { label: "DIMMER", text: "lower brightness" },
   { label: "MARK ENTRY", text: "mark entry" },
   { label: "REPEAT ALERT", text: "repeat last alert" },
+  { label: "⚠ EMERGENCY", text: "emergency mode", danger: true },
+  { label: "CLEAR EMERGENCY", text: "cancel emergency" },
   { label: "STAND DOWN", text: "stand down" },
 ];
 
@@ -71,7 +77,11 @@ export default function CommandBar({
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         {QUICK.map((q) => (
-          <button key={q.label} className="btn text-xs" onClick={() => submit(q.text)}>
+          <button
+            key={q.label}
+            className={`btn text-xs ${q.danger ? "border-danger text-danger" : ""}`}
+            onClick={() => submit(q.text)}
+          >
             {q.label}
           </button>
         ))}

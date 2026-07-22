@@ -65,6 +65,7 @@ class Track:
         self.misses = 0
         self.age = 1
         self.thermal_confirmed = bool(det.get("thermal_confirmed"))
+        self.rgb_corroborated = bool(det.get("rgb_corroborated"))
         self.max_temp_c = det.get("max_temp_c")
         self.severity = det.get("severity")
         self.label_hint = det.get("label_hint", "")
@@ -93,6 +94,8 @@ class Track:
         self.misses = 0
         if det.get("thermal_confirmed"):
             self.thermal_confirmed = True
+        if det.get("rgb_corroborated"):
+            self.rgb_corroborated = True
         if det.get("max_temp_c") is not None:
             self.max_temp_c = det["max_temp_c"]
         if det.get("severity"):
@@ -143,6 +146,7 @@ class Track:
             "conf": round(self.conf, 3),
             "tier": tier,
             "thermal_confirmed": self.thermal_confirmed,
+            "corroborated": self.thermal_confirmed or self.rgb_corroborated,
             "max_temp_c": self.max_temp_c,
             "severity": self.severity,
             "dist_ft": round(self.dist_m * FEET_PER_METER, 1)
