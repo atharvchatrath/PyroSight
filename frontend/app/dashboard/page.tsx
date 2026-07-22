@@ -50,7 +50,7 @@ export default function DashboardPage() {
             </span>
             {state.emergency && (
               <span className="text-xs px-2 py-1 rounded bg-danger text-ink font-bold tracking-widest animate-alarm">
-                ⚠ EMERGENCY MODE
+                EMERGENCY MODE
               </span>
             )}
             <span className="ml-auto text-lg font-bold text-bright">
@@ -106,7 +106,7 @@ export default function DashboardPage() {
           {state.assistant && (
             <div className="panel px-4 py-2 flex items-center gap-3">
               <span className="text-accent text-xs font-bold tracking-widest">
-                💬 ASSISTANT
+                ASSISTANT
               </span>
               <span className="text-bright">{state.assistant}</span>
             </div>

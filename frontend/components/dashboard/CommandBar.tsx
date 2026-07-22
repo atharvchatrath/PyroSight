@@ -20,7 +20,7 @@ const QUICK: { label: string; text: string; danger?: boolean }[] = [
   { label: "DIMMER", text: "lower brightness" },
   { label: "MARK ENTRY", text: "mark entry" },
   { label: "REPEAT ALERT", text: "repeat last alert" },
-  { label: "⚠ EMERGENCY", text: "emergency mode", danger: true },
+  { label: "EMERGENCY", text: "emergency mode", danger: true },
   { label: "CLEAR EMERGENCY", text: "cancel emergency" },
   { label: "STAND DOWN", text: "stand down" },
 ];
@@ -92,7 +92,7 @@ export default function CommandBar({
           onClick={toggleMic}
           title="Push to talk (browser STT; Vosk offline on the Pi)"
         >
-          {listening ? "● LISTENING" : "🎙 VOICE"}
+          {listening ? "● LISTENING" : "VOICE"}
         </button>
         <input
           className="flex-1 min-h-[48px] px-3 rounded border border-edge bg-ink text-bright placeholder-dim focus:outline-none focus:ring-2 focus:ring-accent"

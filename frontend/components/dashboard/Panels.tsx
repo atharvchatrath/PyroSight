@@ -377,7 +377,7 @@ export function MissionReplayPanel() {
           {sessions.length === 0 && <option>no recordings</option>}
         </select>
         <button className="btn text-xs" onClick={() => setPlaying((p) => !p)}>
-          {playing ? "❚❚ PAUSE" : "▶ PLAY"}
+          {playing ? "PAUSE" : "PLAY"}
         </button>
         <button
           className="btn text-xs"

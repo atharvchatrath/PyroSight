@@ -73,7 +73,7 @@ export default function Home() {
         href="/calibrate"
         className="text-dim text-xs tracking-widest hover:text-accent"
       >
-        🔧 CALIBRATION WIZARD — pre-mission sensor check
+        CALIBRATION WIZARD — pre-mission sensor check
       </Link>
     </main>
   );

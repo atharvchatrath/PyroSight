@@ -47,7 +47,7 @@ export default function StatusCluster({ state }: { state: SystemState }) {
         </span>
       </div>
       {d.power_state === "saver" && (
-        <div className="text-warn text-xs">⚡ POWER SAVER</div>
+        <div className="text-warn text-xs">POWER SAVER</div>
       )}
       <div className="flex gap-3">
         {Object.entries(d.sensors).map(([kind, s]) => (

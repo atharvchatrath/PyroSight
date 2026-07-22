@@ -57,7 +57,7 @@ export default function HudPage() {
               never collides with the corner clusters. */}
           {emergency && (
             <div className="absolute top-0 inset-x-0 bg-danger text-ink font-bold text-center py-1.5 text-lg tracking-widest animate-alarm z-10">
-              ⚠ EMERGENCY —{" "}
+              EMERGENCY —{" "}
               {state.nav.target?.kind === "exit"
                 ? `EXIT ${nearestExitText(state)}`
                 : state.nav.instruction}
@@ -90,7 +90,7 @@ export default function HudPage() {
           {state.assistant && !emergency && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 max-w-[55%]">
               <div className="rounded bg-ink/70 border border-accent/40 px-3 py-1 text-accent text-sm text-center">
-                💬 {state.assistant}
+                {state.assistant}
               </div>
             </div>
           )}

@@ -4,17 +4,17 @@
 
 | Component | Recommended model | Role | Approx. |
 |---|---|---|---:|
-| 🧠 Edge computer | **Raspberry Pi 5 (8 GB)** | Perception engine + web stack | $90 |
-| 🌡️ Thermal camera | **FLIR Lepton 3.5 + PureThermal 3** | 160×120 radiometric thermal (UVC Y16, centikelvin) | $320 |
-| 📷 RGB camera | **Raspberry Pi Camera Module 3** | Autofocus RGB, run at 640×480 | $30 |
-| 🧭 IMU | **Bosch BNO085** | On-chip 9-DoF fusion → heading, steps | $25 |
-| 🎛️ Alert MCU | **ESP32** | LEDs / buzzer / haptic via USB serial (JSON protocol, see below) | $10 |
-| 👁️ HUD | **0.39–0.49" HDMI micro-OLED monocular** | Chromium kiosk renders `/hud` | $110–120 |
-| 🔋 Battery | **20,000 mAh USB-C PD power bank** | 5V/5A, ~4–6 h runtime | $60 |
-| ❄️ Cooling | **Official Pi Active Cooler** | Sustained inference load | $10–25 |
-| 💾 Storage | **128 GB industrial microSD** | OS + incident recordings, endurance-rated | $25–30 |
-| 🔔 Feedback | **LEDs + buzzer + haptic motor** | Driven by the ESP32 alert channel | $25 |
-| 📦 Enclosure | **PETG/ABS printed case + rugged helmet mount + wiring** | Field prototype | $60–105 |
+| Edge computer | **Raspberry Pi 5 (8 GB)** | Perception engine + web stack | $90 |
+| Thermal camera | **FLIR Lepton 3.5 + PureThermal 3** | 160×120 radiometric thermal (UVC Y16, centikelvin) | $320 |
+| RGB camera | **Raspberry Pi Camera Module 3** | Autofocus RGB, run at 640×480 | $30 |
+| IMU | **Bosch BNO085** | On-chip 9-DoF fusion, heading, steps | $25 |
+| Alert MCU | **ESP32** | LEDs / buzzer / haptic via USB serial (JSON protocol, see below) | $10 |
+| HUD | **0.39–0.49" HDMI micro-OLED monocular** | Chromium kiosk renders `/hud` | $110–120 |
+| Battery | **20,000 mAh USB-C PD power bank** | 5V/5A, ~4–6 h runtime | $60 |
+| Cooling | **Official Pi Active Cooler** | Sustained inference load | $10–25 |
+| Storage | **128 GB industrial microSD** | OS + incident recordings, endurance-rated | $25–30 |
+| Feedback | **LEDs + buzzer + haptic motor** | Driven by the ESP32 alert channel | $25 |
+| Enclosure | **PETG/ABS printed case + rugged helmet mount + wiring** | Field prototype | $60–105 |
 
 Optional depth upgrade: **Waveshare Dual IMX219 8MP stereo camera** — slots
 in as a future RGB source for true stereo ranging (see Expansion below).
