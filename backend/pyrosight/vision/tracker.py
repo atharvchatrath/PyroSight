@@ -41,15 +41,28 @@ def _iou(a, b) -> float:
     return inter / union if union > 0 else 0.0
 
 
+# Monocular pinhole ranging is only meaningful over a limited band. A
+# partially-visible or occluded object yields a small box, which the model
+# turns into a huge distance — reporting "193 FT" inside a corridor is
+# fiction dressed as precision. Outside this band we report None (unknown),
+# which the HUD renders as "RANGE UNKNOWN" instead of a false number.
+MIN_RANGE_M = 0.4
+MAX_RANGE_M = 30.0     # ~100 ft: beyond any interior sightline in smoke
+MIN_BOX_PX = 12        # smaller than this, box height is mostly noise
+
+
 def estimate_distance_m(cls_name: str, box, frame_w: int) -> Optional[float]:
     dc = taxonomy.REGISTRY.get(cls_name)
     if dc is None or dc.real_height_m is None:
         return None
     box_h = box[3] - box[1]
-    if box_h <= 1:
+    if box_h < MIN_BOX_PX:
         return None
     fx = RGB_FX_AT_640 * (frame_w / 640.0)
-    return dc.real_height_m * fx / box_h
+    dist = dc.real_height_m * fx / box_h
+    if dist < MIN_RANGE_M or dist > MAX_RANGE_M:
+        return None
+    return dist
 
 
 class Track:
@@ -69,7 +82,11 @@ class Track:
         self.max_temp_c = det.get("max_temp_c")
         self.severity = det.get("severity")
         self.label_hint = det.get("label_hint", "")
-        self.dist_m = estimate_distance_m(self.cls, self.box, frame_w)
+        # Measured stereo depth beats the monocular size assumption whenever
+        # it is available (`dist_m_measured` is injected by the engine).
+        self.range_measured = det.get("dist_m_measured") is not None
+        self.dist_m = (det.get("dist_m_measured")
+                       or estimate_distance_m(self.cls, self.box, frame_w))
         self.vel = [0.0, 0.0, 0.0, 0.0]  # per-frame box-corner velocity
         self._evidence = float(det["conf"])  # decaying max of raw det conf
 
@@ -102,7 +119,11 @@ class Track:
             self.severity = det["severity"]
         if det.get("label_hint"):
             self.label_hint = det["label_hint"]
-        d = estimate_distance_m(self.cls, self.box, frame_w)
+        measured = det.get("dist_m_measured")
+        if measured is not None:
+            self.range_measured = True
+        d = measured if measured is not None else estimate_distance_m(
+            self.cls, self.box, frame_w)
         if d is not None:
             if self.dist_m is None:
                 self.dist_m = d
@@ -151,6 +172,10 @@ class Track:
             "severity": self.severity,
             "dist_ft": round(self.dist_m * FEET_PER_METER, 1)
             if self.dist_m is not None else None,
+            # "stereo" = measured from disparity; "mono" = inferred from
+            # assumed object height. The HUD marks the difference so nobody
+            # mistakes an assumption for a measurement.
+            "range_source": "stereo" if self.range_measured else "mono",
             "age": self.age,
             "coasting": self.misses > 0,
             "label_hint": self.label_hint,

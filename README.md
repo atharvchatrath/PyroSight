@@ -52,6 +52,36 @@ scripts\run-frontend.ps1         # second terminal
 
 Open **http://localhost:3100** → choose **HELMET HUD** or **COMMAND DASHBOARD**.
 
+### Validate accuracy on your own hardware
+
+The camera test runs the live pipeline against your real cameras and reports
+**measured** accuracy — throughput, false positives in an empty scene,
+detection recall for each class, range error against a tape measure, and a
+thermal plausibility check. It refuses to run against simulated imagery,
+because certifying accuracy on fake input is worthless.
+
+```bash
+# Pi (real cameras):   sudo systemctl start pyrosight-backend
+# Laptop (browser cam): PYROSIGHT_MODE=live PYROSIGHT_RGB_SOURCE=browser \
+#                       .venv/bin/python backend/run.py   # then open /live
+.venv/bin/python scripts/camera-test.py
+```
+
+Results are written to `backend/data/camera_test_<timestamp>.json` so runs can
+be compared after any pipeline change. On the Pi, check the build first with
+`backend/scripts/preflight.py`.
+
+### Walk through a full incident
+
+```bash
+.venv/bin/python scripts/demo-mission.py
+```
+
+Drives the platform through size-up, primary search, victim location, hazard
+encounter, emergency egress, return-to-entry, and the after-action record —
+over the same API the helmet uses, issuing the same voice intents a
+firefighter would speak. Watch `/hud` and `/dashboard` alongside it.
+
 > Live camera mode on macOS: the first run triggers the system camera
 > permission prompt — approve it and rerun. Live mode without a Lepton/IMU
 > attached runs with clearly-labeled estimated thermal + visual heading.

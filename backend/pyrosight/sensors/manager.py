@@ -14,6 +14,7 @@ from ..sim.world import SimWorld
 from .base import Sensor
 from .imu import BNO085IMU, SimulatedIMU, StaticIMU
 from .rgb import BrowserRGB, PiCameraRGB, SimulatedRGB, WebcamRGB
+from .stereo import StereoRGB
 from .thermal import LeptonThermal, SimulatedThermal
 
 
@@ -43,10 +44,14 @@ class SensorSuite:
             candidates = [WebcamRGB(s.webcam_index, s.rgb_width, s.rgb_height)]
         elif source == "browser":
             candidates = [BrowserRGB()]
+        elif source == "stereo":
+            candidates = [StereoRGB(s.rgb_width, s.rgb_height)]
         elif source == "picamera":
             candidates = [PiCameraRGB(s.rgb_width, s.rgb_height)]
         elif source == "auto":
-            candidates = [PiCameraRGB(s.rgb_width, s.rgb_height),
+            # Stereo first: it MEASURES range instead of assuming object size.
+            candidates = [StereoRGB(s.rgb_width, s.rgb_height),
+                          PiCameraRGB(s.rgb_width, s.rgb_height),
                           WebcamRGB(s.webcam_index, s.rgb_width, s.rgb_height)]
         for cand in candidates:
             if cand.start():

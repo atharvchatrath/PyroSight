@@ -76,3 +76,16 @@ def test_monocular_ranging_sane():
     d = estimate_distance_m("person", [0, 0, 100, 300], 640)
     assert 2.5 < d < 3.3
     assert estimate_distance_m("fire", [0, 0, 100, 300], 640) is None
+
+
+def test_out_of_band_range_reports_unknown():
+    """Monocular ranging must report None (unknown) outside its useful band
+    rather than a fabricated precise number. A partially-visible person gives
+    a tiny box; quoting '193 FT' inside a corridor is fiction."""
+    # Tiny box (distant/occluded person) -> beyond useful range.
+    assert estimate_distance_m("person", [0, 0, 8, 10], 640) is None
+    # Absurdly large box (camera pressed against a person) -> too close.
+    assert estimate_distance_m("person", [0, 0, 400, 4000], 640) is None
+    # A plausible mid-range box still returns a real number.
+    d = estimate_distance_m("person", [0, 0, 100, 300], 640)
+    assert d is not None and 2.5 < d < 3.3

@@ -6,7 +6,7 @@
 |---|---|---|---:|
 | Edge computer | **Raspberry Pi 5 (8 GB)** | Perception engine + web stack | $90 |
 | Thermal camera | **FLIR Lepton 3.5 + PureThermal 3** | 160×120 radiometric thermal (UVC Y16, centikelvin) | $320 |
-| RGB camera | **Raspberry Pi Camera Module 3** | Autofocus RGB, run at 640×480 | $30 |
+| RGB camera | **Waveshare Dual IMX219 stereo** (or Pi Camera Module 3) | Stereo pair *measures* range from disparity; the single camera infers it from assumed object size | $60 / $30 |
 | IMU | **Bosch BNO085** | On-chip 9-DoF fusion, heading, steps | $25 |
 | Alert MCU | **ESP32** | LEDs / buzzer / haptic via USB serial (JSON protocol, see below) | $10 |
 | HUD | **0.39–0.49" HDMI micro-OLED monocular** | Chromium kiosk renders `/hud` | $110–120 |
@@ -16,8 +16,30 @@
 | Feedback | **LEDs + buzzer + haptic motor** | Driven by the ESP32 alert channel | $25 |
 | Enclosure | **PETG/ABS printed case + rugged helmet mount + wiring** | Field prototype | $60–105 |
 
-Optional depth upgrade: **Waveshare Dual IMX219 8MP stereo camera** — slots
-in as a future RGB source for true stereo ranging (see Expansion below).
+### Stereo ranging (recommended)
+
+With the Waveshare Dual IMX219 fitted to both Pi 5 CSI ports, PyroSight
+measures range from stereo disparity instead of inferring it from assumed
+object height. This matters operationally: the monocular model silently
+mis-ranges a crouching victim, a child, or a partially occluded doorway,
+because all three break the "standard size, fully visible" assumption. The
+HUD labels every reading `stereo` (measured) or `mono` (inferred) so the two
+are never confused.
+
+Enable it explicitly, or leave `auto` (stereo is preferred when present):
+
+```bash
+PYROSIGHT_RGB_SOURCE=stereo
+```
+
+Calibrate before trusting the numbers — the driver falls back to datasheet
+geometry (60 mm baseline, 83° HFOV) and reports itself `UNCALIBRATED` until
+`backend/data/stereo_calib.json` exists with measured `fx_at_640` and
+`baseline_m`. Verify accuracy with the range section of
+`scripts/camera-test.py` against a tape measure.
+
+Where a depth match is unreliable (a flat, textureless wall in smoke) the
+driver returns *no range* rather than a confident wrong number.
 
 ## Wiring
 

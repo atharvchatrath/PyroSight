@@ -133,13 +133,18 @@ class GuidanceEngine:
         if age > 120.0:  # stale memory is worse than admitting we don't know
             return None
         rel = _norm180(mem["abs_bearing"] - heading_deg)
+        # A remembered distance goes stale the moment the operator moves —
+        # bearing survives (it is re-derived against current heading), range
+        # does not. Drop it past a few seconds rather than quoting a figure
+        # that is no longer true.
+        dist = mem.get("dist_ft") if age <= 5.0 else None
         return {
             "kind": kind,
             "cls": mem.get("cls", "person"),
             "source": "memory",
             "age_s": round(age),
             "rel_bearing_deg": round(rel, 1),
-            "dist_ft": mem.get("dist_ft"),
+            "dist_ft": dist,
             "conf": round(max(0.2, mem["conf"] * math.exp(-age / 90.0)), 2),
         }
 

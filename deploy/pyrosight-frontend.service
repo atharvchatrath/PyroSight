@@ -1,4 +1,5 @@
-# PyroSight web frontend (Next.js production server).
+# PyroSight web frontend (Next.js production server) on port 3100 — the same
+# port used in development, so every URL in the docs works on the helmet unit.
 [Unit]
 Description=PyroSight frontend
 After=network.target
@@ -7,6 +8,8 @@ After=network.target
 Type=simple
 User=pyrosight
 WorkingDirectory=/opt/pyrosight/frontend
+Environment=NODE_ENV=production
+Environment=PORT=3100
 ExecStart=/usr/bin/npm run start
 Restart=always
 RestartSec=3

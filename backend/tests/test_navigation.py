@@ -61,3 +61,26 @@ def test_guidance_blocked_by_fire_ahead():
     nav = g.update([fire], 0.0, bc, 640)
     assert nav["status"] == "BLOCKED"
     assert "HAZARD" in nav["instruction"]
+
+
+def test_memory_target_drops_stale_distance():
+    """Bearing survives operator movement (re-derived against heading), range
+    does not. A remembered target older than a few seconds must report no
+    distance rather than a figure that is no longer true."""
+    import time as _time
+    g = GuidanceEngine(NavConfig())
+    g.set_objective("locate_victim")
+    bc = BreadcrumbTrail()
+    bc.update_absolute(0.0, 0.0)
+    victim = {"cls": "person", "tier": "confirmed", "conf": 0.9,
+              "box": [300, 200, 340, 400], "dist_ft": 19.0}
+    g.update([victim], 0.0, bc, 640)          # sighting recorded
+    nav = g.update([], 0.0, bc, 640)          # immediately after: range kept
+    assert nav["target"]["source"] == "memory"
+    assert nav["target"]["dist_ft"] == 19.0
+    # Age the memory past the range-validity window.
+    g._last_victim["ts"] = _time.time() - 30.0
+    nav2 = g.update([], 0.0, bc, 640)
+    assert nav2["target"] is not None                  # bearing still useful
+    assert nav2["target"]["dist_ft"] is None           # range withheld
+    assert "FT" not in nav2["instruction"]

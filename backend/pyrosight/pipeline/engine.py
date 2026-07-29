@@ -118,6 +118,7 @@ class PerceptionEngine:
             "power_saving": False,
         }
         self._emergency_manual = False
+        self._emergency_suppress_until = 0.0
         self._search = SearchCoverage()
         self.assistant = SmartAssistant()
 
@@ -316,8 +317,15 @@ class PerceptionEngine:
                     max(0.6, self.prefs["brightness"] - 0.15), 2)
             elif intent == "EMERGENCY_MODE":
                 self._emergency_manual = True
+                self._emergency_suppress_until = 0.0
             elif intent == "EXIT_EMERGENCY":
+                # A dismissal must actually stick. Without a suppression
+                # window the auto-trigger re-fires on the next frame and the
+                # operator cannot clear the banner — which teaches them to
+                # ignore it. Conditions can still re-escalate after the
+                # window, and a manual declaration overrides immediately.
                 self._emergency_manual = False
+                self._emergency_suppress_until = time.time() + 60.0
             elif intent == "SEARCH_MODE":
                 self.guidance.set_objective("search")
                 self._search.start(self.breadcrumbs.position)
@@ -409,6 +417,14 @@ class PerceptionEngine:
         fused_dets = fuse(detections, fire_regions, thermal_result, (w, h),
                           thermal_wh,
                           thermal_independent=(thermal_source in ("lepton", "sim")))
+        # Stereo depth (Waveshare dual IMX219): attach MEASURED range so the
+        # tracker uses observation instead of the monocular size assumption.
+        depth = getattr(self.sensors.rgb, "depth", None)
+        if depth is not None:
+            for det in fused_dets:
+                measured = depth.distance_for_box(det["box"], (w, h))
+                if measured is not None:
+                    det["dist_m_measured"] = measured
         tracks = self.tracker.update(fused_dets, (w, h))
         self._emit_track_events(tracks)
 
@@ -459,6 +475,8 @@ class PerceptionEngine:
             or (diag.get("battery_percent") is not None
                 and diag["battery_percent"] < 12)
             or smoke_vis == "NEAR ZERO")
+        if time.time() < self._emergency_suppress_until:
+            auto_emergency = False   # operator dismissed; honour it
         emergency = self._emergency_manual or auto_emergency
         self.prefs["emergency"] = emergency
         # Power-saving engages automatically on low battery.
