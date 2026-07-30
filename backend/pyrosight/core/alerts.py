@@ -25,12 +25,14 @@ class AlertEngine:
         "battery_low": 120.0,
         "sensor_degraded": 60.0,
         "heat_stress": 60.0,
+        "teammate_signal_lost": 60.0,
     }
 
     def __init__(self, physio_cfg: Optional[PhysioConfig] = None):
         self._last_fired: Dict[str, float] = {}
         self._latest: Optional[Dict[str, Any]] = None
         self._physio_cfg = physio_cfg or PhysioConfig()
+        self._had_teammates = False
 
     @property
     def latest(self) -> Optional[Dict[str, Any]]:
@@ -39,8 +41,10 @@ class AlertEngine:
     def evaluate(self, tracks: List[Dict[str, Any]], thermal: Dict[str, Any],
                  smoke_density: float, nav: Dict[str, Any],
                  diagnostics: Dict[str, Any],
-                 physio: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+                 physio: Optional[Dict[str, Any]] = None,
+                 buddies: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
         alerts: List[Dict[str, Any]] = []
+        buddies = buddies or []
 
         # Fire alerts are tier-gated: a confirmed track (thermal-corroborated
         # or sustained high evidence) goes critical; "likely" warns as
@@ -126,6 +130,16 @@ class AlertEngine:
                 alerts.append(self._fire(
                     "heat_stress", "warning",
                     f"ELEVATED EXERTION — HR {int(hr or 0)} — MONITOR"))
+
+        # Mesh: a teammate who was visible and goes silent is worth a nudge
+        # (dead battery, radio out of range, or worse) — but only the
+        # transition, not a standing nag while genuinely alone.
+        if buddies:
+            self._had_teammates = True
+        elif self._had_teammates:
+            self._had_teammates = False
+            alerts.append(self._fire(
+                "teammate_signal_lost", "warning", "TEAMMATE SIGNAL LOST"))
 
         fired = [a for a in alerts if a is not None]
         if fired:

@@ -37,6 +37,7 @@ from ..navigation.assistant import SmartAssistant
 from ..navigation.breadcrumbs import BreadcrumbTrail
 from ..navigation.guidance import GuidanceEngine
 from ..navigation.heading import HeadingFilter
+from ..navigation.mesh import MeshLink, buddy_bearings
 from ..navigation.search import SearchCoverage
 from ..peripherals.esp32 import Esp32Peripherals
 from ..recording.incidents import IncidentRecorder
@@ -85,6 +86,7 @@ class PerceptionEngine:
         self.guidance = GuidanceEngine(config.nav)
         self.alerts = AlertEngine(config.physio)
         self.diagnostics = Diagnostics()
+        self.mesh = MeshLink(config.mesh)
         # ESP32 alert channel (LEDs / buzzer / haptic): silent no-op when
         # no board is attached.
         self.peripherals = Esp32Peripherals()
@@ -126,6 +128,7 @@ class PerceptionEngine:
 
     def start(self) -> None:
         self.sensors.start()
+        self.mesh.start()
         # Booted with RGB_SOURCE=browser: the suite's BrowserRGB is the
         # standing ingest buffer.
         if isinstance(self.sensors.rgb, BrowserRGB):
@@ -166,6 +169,7 @@ class PerceptionEngine:
             self._voice_listener.stop()
         self.peripherals.close()
         self.sensors.stop()
+        self.mesh.stop()
         self.recorder.log("session_end", {})
         self.recorder.close()
 
@@ -442,6 +446,14 @@ class PerceptionEngine:
             self.breadcrumbs.update_step(heading)
         nav = self.guidance.update(tracks, heading, self.breadcrumbs, w)
 
+        # ---- mesh position sharing + buddy bearing ----
+        # `emergency` for this broadcast lags one tick (computed below) —
+        # a status flag one frame stale is a non-issue for a team map.
+        self.mesh.publish(self.breadcrumbs.position, heading,
+                          emergency=self.prefs.get("emergency", False))
+        buddies = buddy_bearings(self.breadcrumbs.position, heading,
+                                 self.mesh.teammates())
+
         # ---- search coverage + smart assistant ----
         self._search.update(self.breadcrumbs.position, heading)
         smoke_vis = ("CALIBRATING" if self.smoke.calibrating
@@ -463,7 +475,7 @@ class PerceptionEngine:
         diag = self.diagnostics.sample(self._fps, self._latency_ms,
                                        sensor_health, self.sim_mode)
         fired = self.alerts.evaluate(tracks, thermal_result, smoke_density,
-                                     nav, diag, physio=physio)
+                                     nav, diag, physio=physio, buddies=buddies)
 
         # ---- emergency mode (manual OR auto on genuinely critical
         # conditions) — a fire visible across the room is NOT an emergency;
@@ -535,6 +547,7 @@ class PerceptionEngine:
             "assistant": self.assistant.current,
             "emergency": emergency,
             "physio": physio,
+            "mesh": {"unit_id": self.mesh.unit_id, "buddies": buddies},
             "diagnostics": diag,
             "prefs": {**self.prefs, "effective_brightness": round(eff_brightness, 2)},
             "last_alert": self.alerts.latest,

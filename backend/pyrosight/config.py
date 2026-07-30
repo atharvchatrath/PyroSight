@@ -90,6 +90,19 @@ class PhysioConfig:
 
 
 @dataclass
+class MeshConfig:
+    """UDP broadcast position sharing between helmets on the same local
+    network — a software stand-in for a future UWB/BLE mesh radio, same
+    sim<->hardware swap pattern as every sensor in pyrosight.sensors."""
+    enabled: bool = _env_bool("MESH_ENABLED", True)
+    unit_id: str = _env("UNIT_ID", "")           # blank -> auto-generated
+    port: int = _env_int("MESH_PORT", 47110)
+    broadcast_addr: str = _env("MESH_BROADCAST", "255.255.255.255")
+    broadcast_hz: float = _env_float("MESH_BROADCAST_HZ", 1.0)
+    timeout_s: float = _env_float("MESH_TIMEOUT_S", 15.0)
+
+
+@dataclass
 class VisionConfig:
     # Detector chain: onnx -> ultralytics -> none. Sim mode uses ground truth.
     onnx_model: str = _env("ONNX_MODEL", str(MODELS_DIR / "yolov8n.onnx"))
@@ -159,6 +172,7 @@ class PyroSightConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     engine: EngineConfig = field(default_factory=EngineConfig)
     physio: PhysioConfig = field(default_factory=PhysioConfig)
+    mesh: MeshConfig = field(default_factory=MeshConfig)
     platform: str = field(default_factory=platform_name)
 
     def resolved_mode(self) -> str:
