@@ -56,7 +56,7 @@ export default function HudPage() {
           {/* Emergency banner: full-width strip pinned to the very top so it
               never collides with the corner clusters. */}
           {emergency && (
-            <div className="absolute top-0 inset-x-0 bg-danger text-ink font-bold text-center py-1.5 text-lg tracking-widest animate-alarm z-10">
+            <div className="absolute top-0 inset-x-0 bg-danger text-ink font-bold text-center py-1.5 text-lg tracking-widest animate-alarm z-10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.6)]">
               EMERGENCY —{" "}
               {state.nav.target?.kind === "exit"
                 ? `EXIT ${nearestExitText(state)}`
@@ -67,7 +67,7 @@ export default function HudPage() {
           {/* corner clusters float over the video (pushed below the banner
               when emergency is active) */}
           <div
-            className={`absolute left-3 rounded border border-edge/60 bg-ink/60 backdrop-blur-[2px] px-2.5 py-2 ${
+            className={`absolute left-3 rounded-lg border border-edge/60 bg-ink/65 backdrop-blur-[3px] px-2.5 py-2 shadow-[0_8px_20px_-10px_rgba(0,0,0,0.7)] ${
               emergency ? "top-12" : "top-3"
             }`}
           >
@@ -78,7 +78,7 @@ export default function HudPage() {
               emergency ? "top-12" : "top-3"
             }`}
           >
-            <div className="rounded border border-edge/60 bg-ink/60 backdrop-blur-[2px] px-2.5 py-2">
+            <div className="rounded-lg border border-edge/60 bg-ink/65 backdrop-blur-[3px] px-2.5 py-2 shadow-[0_8px_20px_-10px_rgba(0,0,0,0.7)]">
               <CompassStrip state={state} />
             </div>
             {/* Emergency reduces clutter: mini-map hidden, exit cue enlarged. */}
@@ -89,7 +89,7 @@ export default function HudPage() {
               emergency mode to reduce clutter. */}
           {state.assistant && !emergency && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 max-w-[55%]">
-              <div className="rounded bg-ink/70 border border-accent/40 px-3 py-1 text-accent text-sm text-center">
+              <div className="rounded-lg bg-ink/75 backdrop-blur-[3px] border border-accent/40 px-3 py-1 text-accent text-sm text-center shadow-[0_8px_20px_-10px_rgba(0,0,0,0.7)]">
                 {state.assistant}
               </div>
             </div>

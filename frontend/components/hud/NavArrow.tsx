@@ -41,7 +41,7 @@ export default function NavArrow({ nav, big = false }: { nav: NavState; big?: bo
         )}
       </svg>
       <div
-        className="text-[15px] font-bold tracking-wider px-2 py-0.5 rounded bg-ink/70"
+        className="text-[15px] font-bold tracking-wider px-2 py-0.5 rounded-lg bg-ink/70 backdrop-blur-[2px]"
         style={{ color }}
       >
         {target.dist_ft != null ? `${Math.round(target.dist_ft)} FT` : ""}

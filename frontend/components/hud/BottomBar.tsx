@@ -33,7 +33,7 @@ export default function BottomBar({ state }: { state: SystemState }) {
     <div className="flex flex-col gap-1.5">
       {alertFresh && (
         <div
-          className={`self-center px-5 py-1.5 rounded font-bold tracking-wider text-[17px] ${
+          className={`self-center px-5 py-1.5 rounded-lg font-bold tracking-wider text-[17px] shadow-[0_8px_20px_-8px_rgba(0,0,0,0.7)] ${
             alert.severity === "critical"
               ? "bg-danger text-ink animate-alarm"
               : alert.severity === "warning"

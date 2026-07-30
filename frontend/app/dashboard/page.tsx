@@ -28,32 +28,35 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen p-3 flex flex-col gap-3">
       {/* header */}
-      <header className="flex items-center gap-4 flex-wrap">
-        <Link href="/" className="text-xl font-bold tracking-[0.3em] text-bright">
+      <header className="panel sticky top-0 z-20 flex items-center gap-4 flex-wrap px-4 py-3">
+        <Link href="/" className="text-xl font-bold tracking-[0.3em] text-bright shrink-0">
           PYRO<span className="text-danger">SIGHT</span>
         </Link>
-        <span className="text-dim text-xs tracking-widest">COMMAND DASHBOARD</span>
+        <span className="text-dim text-xs tracking-widest shrink-0">
+          COMMAND DASHBOARD
+        </span>
         <span
-          className={`text-xs px-2 py-1 rounded border ${
+          className={`text-xs px-2.5 py-1 rounded-full border flex items-center gap-1.5 shrink-0 ${
             connected
-              ? "border-ok text-ok"
-              : "border-danger text-danger animate-alarm"
+              ? "border-ok/30 bg-ok/[0.06] text-ok"
+              : "border-danger/30 bg-danger/[0.06] text-danger animate-alarm"
           }`}
         >
+          <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-ok" : "bg-danger"}`} />
           {connected ? "LINK OK" : "LINK DOWN"}
         </span>
         {state && (
           <>
-            <span className="text-xs text-dim">
+            <span className="text-xs text-dim shrink-0">
               {state.mode.toUpperCase()} · {state.detector.toUpperCase()} ·{" "}
               {state.fps.toFixed(0)} FPS
             </span>
             {state.emergency && (
-              <span className="text-xs px-2 py-1 rounded bg-danger text-ink font-bold tracking-widest animate-alarm">
+              <span className="text-xs px-2.5 py-1 rounded-full bg-danger text-ink font-bold tracking-widest animate-alarm shrink-0">
                 EMERGENCY MODE
               </span>
             )}
-            <span className="ml-auto text-lg font-bold text-bright">
+            <span className="ml-auto text-lg font-bold text-bright tabular-nums">
               {missionClock(state.mission_time_s)}
             </span>
             <Link href="/live" className="btn text-xs">

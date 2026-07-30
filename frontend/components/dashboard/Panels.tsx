@@ -44,7 +44,10 @@ export function DetectionLog({ state }: { state: SystemState }) {
       </thead>
       <tbody>
         {state.tracks.map((t) => (
-          <tr key={t.id} className="border-t border-edge/50">
+          <tr
+            key={t.id}
+            className="border-t border-edge/50 hover:bg-white/[0.02] transition-colors"
+          >
             <td className="py-1 font-bold" style={{ color: t.color }}>
               {t.display}
             </td>
@@ -112,7 +115,7 @@ export function HeatPanel({ state }: { state: SystemState }) {
           ["MEAN", t.mean_c, "text-bright"],
           ["MAX", t.max_c, t.max_c > 250 ? "text-danger" : "text-warn"],
         ].map(([label, val, cls]) => (
-          <div key={label as string} className="panel p-2">
+          <div key={label as string} className="rounded-lg border border-edge/60 bg-panel2/60 p-2">
             <div className="text-dim">{label}</div>
             <div className={`text-lg font-bold ${cls}`}>
               {Math.round(val as number)}°C
@@ -365,7 +368,7 @@ export function MissionReplayPanel() {
     <div className="text-xs flex flex-col gap-2">
       <div className="flex items-center gap-2 flex-wrap">
         <select
-          className="min-h-[36px] px-2 rounded border border-edge bg-ink text-bright"
+          className="min-h-[36px] px-2 rounded-lg border border-edge bg-ink text-bright"
           value={selected ?? ""}
           onChange={(e) => setSelected(e.target.value)}
         >

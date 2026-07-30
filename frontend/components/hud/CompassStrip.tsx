@@ -35,7 +35,7 @@ export default function CompassStrip({ state }: { state: SystemState }) {
         {missionClock(state.mission_time_s)}
       </div>
       <div
-        className="relative h-9 border border-edge bg-panel/80 rounded overflow-hidden"
+        className="relative h-9 border border-edge bg-panel/80 rounded-lg overflow-hidden"
         style={{ width }}
       >
         {ticks.map((t) => (
