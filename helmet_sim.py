@@ -96,20 +96,20 @@ COCO_NAMES = {0: "PERSON", 56: "CHAIR", 57: "SOFA", 59: "BED", 60: "TABLE", 62: 
 # ============================================================================
 # PREMIUM COLOR PALETTE  (BGR notation)
 # ============================================================================
-C_BG        = (22,  14,  10)
-C_PANEL     = (30,  20,  15)
-C_BORDER    = (60,  50,  40)
-C_CYAN      = (255, 212,   0)
-C_GREEN     = (136, 255,   0)
-C_RED       = ( 40,  50, 255)
-C_AMBER     = (  0, 170, 255)
-C_ORANGE    = ( 20, 120, 255)
-C_WHITE     = (235, 235, 240)
-C_DIM       = ( 90,  90, 100)
-C_TEAL      = (200, 230,   0)
-C_NVGRN     = (  0, 220,  50)
+C_BG        = ( 19,  17,  15)
+C_PANEL     = ( 27,  24,  21)
+C_BORDER    = ( 62,  55,  48)
+C_CYAN      = (222, 205, 150)
+C_GREEN     = (168, 216, 150)
+C_RED       = (108, 108, 214)
+C_AMBER     = ( 96, 172, 224)
+C_ORANGE    = ( 84, 140, 222)
+C_WHITE     = (232, 233, 230)
+C_DIM       = (110, 103,  94)
+C_TEAL      = (196, 210, 168)
+C_NVGRN     = (128, 210, 122)
 C_BLACK     = (  0,   0,   0)
-C_FIRE_GLOW = ( 30, 100, 255)
+C_FIRE_GLOW = ( 84, 140, 222)
 
 FONT_BODY = cv2.FONT_HERSHEY_DUPLEX
 FONT_MONO = cv2.FONT_HERSHEY_SIMPLEX
@@ -665,24 +665,21 @@ class HUD:
     # -------------------------------------------------------------------------
     # Core drawing helpers
     # -------------------------------------------------------------------------
-    def _glow(self, img, text, org, scale, col, thickness=1, blur_r=3):
+    def _glow(self, img, text, org, scale, col, thickness=1, blur_r=1):
         x, y = org
-        for dx in range(-blur_r, blur_r+1, max(1,blur_r)):
-            for dy in range(-blur_r, blur_r+1, max(1,blur_r)):
-                if dx == 0 and dy == 0: continue
-                cv2.putText(img, text, (x+dx,y+dy), FONT_BODY, scale,
-                            C_BLACK, thickness+2, cv2.LINE_AA)
+        cv2.putText(img, text, (x+1,y+1), FONT_BODY, scale,
+                    C_BLACK, thickness+1, cv2.LINE_AA)
         cv2.putText(img, text, org, FONT_BODY, scale, col, thickness, cv2.LINE_AA)
 
-    def _panel(self, img, x1, y1, x2, y2, alpha=0.80, border_col=None):
+    def _panel(self, img, x1, y1, x2, y2, alpha=0.62, border_col=None):
         overlay = img.copy()
         cv2.rectangle(overlay, (x1,y1), (x2,y2), C_PANEL, -1)
         cv2.addWeighted(overlay, alpha, img, 1-alpha, 0, img)
         if border_col:
-            cv2.rectangle(img, (x1,y1), (x2,y2), border_col, 1)
+            cv2.rectangle(img, (x1,y1), (x2,y2), border_col, 1, cv2.LINE_AA)
 
-    def _bracket(self, img, x1, y1, x2, y2, col, thickness=2, pulse=0.0, lock=0.0):
-        arm = max(10, int(min(x2-x1,y2-y1)*clamp(0.18+0.05*math.sin(pulse),0.08,0.32)))
+    def _bracket(self, img, x1, y1, x2, y2, col, thickness=1, pulse=0.0, lock=0.0):
+        arm = max(8, int(min(x2-x1,y2-y1)*clamp(0.14+0.02*math.sin(pulse),0.08,0.22)))
         if lock > 0:
             ins = int(lock*min(x2-x1,y2-y1)*0.18)
             x1+=ins; y1+=ins; x2-=ins; y2-=ins
@@ -691,34 +688,34 @@ class HUD:
             cv2.line(img,(cx,cy),(cx,cy+sy*arm),   col, thickness, cv2.LINE_AA)
 
     def _confidence_bar(self, img, x, y, w, conf, col):
-        cv2.rectangle(img,(x,y),(x+w,y+4), C_BORDER, -1)
+        cv2.rectangle(img,(x,y),(x+w,y+3), C_BORDER, -1)
         filled = int(w*clamp(conf,0,1))
-        if filled > 0: cv2.rectangle(img,(x,y),(x+filled,y+4), col, -1)
+        if filled > 0: cv2.rectangle(img,(x,y),(x+filled,y+3), col, -1)
 
     def _label_card(self, img, x1, y1, label, sub, col, conf=None):
-        pad_x, pad_y = 8, 6
-        (tw, th), _ = cv2.getTextSize(label, FONT_BODY, 0.52, 1)
+        pad_x, pad_y = 7, 5
+        (tw, th), _ = cv2.getTextSize(label, FONT_BODY, 0.48, 1)
         card_w = tw + pad_x*2 + 4
-        card_h = th + pad_y*2 + (8 if conf is not None else 0)
+        card_h = th + pad_y*2 + (7 if conf is not None else 0)
         cx1 = x1; cy1 = max(0, y1-card_h-4)
         cx2 = cx1+card_w; cy2 = cy1+card_h
-        self._panel(img, cx1, cy1, cx2, cy2, 0.85)
-        cv2.rectangle(img,(cx1,cy1),(cx1+3,cy2), col, -1)
+        self._panel(img, cx1, cy1, cx2, cy2, 0.60, C_BORDER)
+        cv2.rectangle(img,(cx1,cy1),(cx1+2,cy2), col, -1)
         ty = cy1+pad_y+th
-        cv2.putText(img, label, (cx1+pad_x+4,ty), FONT_BODY, 0.52, C_WHITE, 1, cv2.LINE_AA)
+        cv2.putText(img, label, (cx1+pad_x+4,ty), FONT_BODY, 0.48, C_WHITE, 1, cv2.LINE_AA)
         if conf is not None:
             self._confidence_bar(img, cx1+pad_x+4, ty+3, tw, conf, col)
         if sub:
-            self._glow(img, sub, (x1+4, min(y1+20, img.shape[0]-5)), 0.42, col, 1, 2)
+            self._glow(img, sub, (x1+4, min(y1+20, img.shape[0]-5)), 0.40, col, 1)
 
     def _pulse_ring(self, img, cx, cy, r_base, t, col):
-        for i in range(3):
-            phase = (t*2.5 + i*0.4) % 1.0
-            r = int(r_base + phase*30)
-            thick = max(1, int((1.0-phase)*3))
+        for i in range(2):
+            phase = (t*2.0 + i*0.5) % 1.0
+            r = int(r_base + phase*22)
+            thick = max(1, int((1.0-phase)*2))
             overlay = img.copy()
             cv2.circle(overlay,(cx,cy),r,col,thick,cv2.LINE_AA)
-            a = (1.0-phase)*0.55
+            a = (1.0-phase)*0.32
             cv2.addWeighted(overlay, a, img, 1-a, 0, img)
 
     # -------------------------------------------------------------------------
@@ -727,14 +724,14 @@ class HUD:
     def top_bar(self, img, W):
         overlay = img.copy()
         cv2.rectangle(overlay,(0,0),(W,self.TOPBAR_H), C_BG, -1)
-        cv2.addWeighted(overlay,0.85,img,0.15,0,img)
-        cv2.line(img,(0,self.TOPBAR_H),(W,self.TOPBAR_H),(80,60,40),1)
+        cv2.addWeighted(overlay,0.68,img,0.32,0,img)
+        cv2.line(img,(0,self.TOPBAR_H),(W,self.TOPBAR_H),C_BORDER,1,cv2.LINE_AA)
 
     def sidebar(self, img, H):
         overlay = img.copy()
         cv2.rectangle(overlay,(0,self.TOPBAR_H),(self.SIDEBAR_W,H), C_BG, -1)
-        cv2.addWeighted(overlay,0.82,img,0.18,0,img)
-        cv2.line(img,(self.SIDEBAR_W,self.TOPBAR_H),(self.SIDEBAR_W,H),(80,60,40),1)
+        cv2.addWeighted(overlay,0.65,img,0.35,0,img)
+        cv2.line(img,(self.SIDEBAR_W,self.TOPBAR_H),(self.SIDEBAR_W,H),C_BORDER,1,cv2.LINE_AA)
 
     def haz_fills(self, img, hz):
         for h in hz:
@@ -755,15 +752,15 @@ class HUD:
     # -------------------------------------------------------------------------
     def nav_line(self, img, path, status, t):
         col = C_GREEN if status != "BLOCKED" else C_RED
-        gl  = (0,40,0) if status != "BLOCKED" else (0,0,50)
+        gl  = tuple(int(c*0.25) for c in col)
         for a, b in zip(path[:-1], path[1:]):
-            cv2.line(img,_ipt(a),_ipt(b),gl,26,cv2.LINE_AA)
-            cv2.line(img,_ipt(a),_ipt(b),col,6,cv2.LINE_AA)
+            cv2.line(img,_ipt(a),_ipt(b),gl,12,cv2.LINE_AA)
+            cv2.line(img,_ipt(a),_ipt(b),col,2,cv2.LINE_AA)
         self._chevrons(img, path, col, t)
         if len(path) == 3:
             wx,wy = _ipt(path[1])
-            pts = np.array([(wx,wy-14),(wx+14,wy),(wx,wy+14),(wx-14,wy)],np.int32)
-            cv2.fillPoly(img,[pts.reshape(-1,1,2)],C_AMBER)
+            pts = np.array([(wx,wy-10),(wx+10,wy),(wx,wy+10),(wx-10,wy)],np.int32)
+            cv2.polylines(img,[pts.reshape(-1,1,2)],True,C_AMBER,1,cv2.LINE_AA)
 
     def _chevrons(self, img, path, col, t):
         ph = (t*1.8)%1.0; pts = []
@@ -774,22 +771,22 @@ class HUD:
                 f = ((i/float(n))+ph)%1.0
                 pts.append((a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, theta))
         for x, y, theta in pts:
-            sz = clamp(int(y/22),5,22); af = 0.5+0.5*math.sin(t*3+y*0.02)
+            sz = clamp(int(y/28),4,13); af = 0.45+0.45*math.sin(t*3+y*0.02)
             bc = tuple(int(c*af) for c in col)
             tip = (x+math.cos(theta)*sz, y+math.sin(theta)*sz)
             sp = math.pi/3.8
             l = (tip[0]+math.cos(theta-sp+math.pi)*sz*1.4, tip[1]+math.sin(theta-sp+math.pi)*sz*1.4)
             r = (tip[0]+math.cos(theta+sp+math.pi)*sz*1.4, tip[1]+math.sin(theta+sp+math.pi)*sz*1.4)
             arr = np.array([_ipt(l),_ipt(tip),_ipt(r)],np.int32).reshape(-1,1,2)
-            cv2.polylines(img,[arr],False,C_BLACK,max(1,sz//2+3),cv2.LINE_AA)
-            cv2.polylines(img,[arr],False,bc,      max(1,sz//2),   cv2.LINE_AA)
+            cv2.polylines(img,[arr],False,C_BLACK,max(1,sz//3+2),cv2.LINE_AA)
+            cv2.polylines(img,[arr],False,bc,      max(1,sz//3),   cv2.LINE_AA)
 
     # -------------------------------------------------------------------------
     # Entity boxes
     # -------------------------------------------------------------------------
     def person_box(self, img, tr, pulse):
         x1,y1,x2,y2 = (int(v) for v in tr.box)
-        self._bracket(img,x1,y1,x2,y2,C_CYAN,2,pulse,tr.lock_anim)
+        self._bracket(img,x1,y1,x2,y2,C_CYAN,1,pulse,tr.lock_anim)
         cx = (x1+x2)//2
         cv2.line(img,(cx,y2-14),(cx,y2-4),C_CYAN,1,cv2.LINE_AA)
         dist_str = f"{tr.dist:.1f} FT" if tr.dist else None
@@ -810,7 +807,7 @@ class HUD:
     def door_box(self, img, tr, is_tgt, pulse):
         x1,y1,x2,y2 = (int(v) for v in tr.box)
         col = C_GREEN
-        self._bracket(img,x1,y1,x2,y2,col,3 if is_tgt else 2,pulse,tr.lock_anim)
+        self._bracket(img,x1,y1,x2,y2,col,2 if is_tgt else 1,pulse,tr.lock_anim)
         if is_tgt:
             step = 16
             for off in range(0,(x2-x1)+(y2-y1),step):
@@ -845,10 +842,9 @@ class HUD:
         x1,y1,x2,y2 = (int(v) for v in hz["box"])
         cx = (x1+x2)//2; cy = (y1+y2)//2
         r_base = min(x2-x1,y2-y1)//2
-        thick = 3+int(1.5*abs(math.sin(t*4)))
-        cv2.rectangle(img,(x1,y1),(x2,y2),C_RED,thick)
+        thick = 1+int(1*abs(math.sin(t*4)))
+        cv2.rectangle(img,(x1,y1),(x2,y2),C_RED,thick,cv2.LINE_AA)
         self._pulse_ring(img,cx,cy,r_base,t,C_ORANGE)
-        cv2.rectangle(img,(x1+2,y1+2),(x2-2,y2-2),C_FIRE_GLOW,1)
         self._label_card(img,x1,y1,"FIRE HAZARD",f"{hz['temp']:.0f}F",C_RED,None)
 
     def draw_path(self, img, path_info, t):
@@ -883,7 +879,7 @@ class HUD:
 
     def minimap(self, img, W, H, persons, doors, hazards, obstacles, geo_doors, t):
         mw,mh = 160,120; x0=W-mw-20; y0=self.TOPBAR_H+8
-        self._panel(img,x0-2,y0-2,x0+mw+2,y0+mh+2,0.88,C_BORDER)
+        self._panel(img,x0-2,y0-2,x0+mw+2,y0+mh+2,0.66,C_BORDER)
         for i in range(1,4):
             gx=x0+mw*i//4; gy=y0+mh*i//4
             cv2.line(img,(gx,y0),(gx,y0+mh),(30,25,20),1)
@@ -965,7 +961,7 @@ class HUD:
         lat,lon,fix,mode = gps_info
         col = C_GREEN if fix else C_AMBER
         x0=W-258; y0=self.TOPBAR_H+136
-        self._panel(img,x0,y0,W-20,y0+54,0.85,C_BORDER)
+        self._panel(img,x0,y0,W-20,y0+54,0.64,C_BORDER)
         # Satellite icon
         ico_x=x0+14; ico_y=y0+27
         cv2.circle(img,(ico_x,ico_y),6,col,1)
@@ -999,10 +995,16 @@ class HUD:
         (cw,_),_ = cv2.getTextSize(clock,FONT_MONO,0.50,1)
         self._glow(img,clock,(W//2-cw//2,36),0.50,C_WHITE,1)
 
-        # Threat badge
+        # Threat badge — slim outlined pill, not a filled block
         tx=W//2+140
-        cv2.rectangle(img,(tx-6,10),(tx+128,50),tc,-1)
-        cv2.putText(img,f"  {tl}",(tx,40),FONT_BOLD,0.58,C_BLACK,2,cv2.LINE_AA)
+        bx1,by1,bx2,by2=tx-6,15,tx+128,45
+        ov=img.copy()
+        cv2.rectangle(ov,(bx1,by1),(bx2,by2),C_PANEL,-1)
+        cv2.addWeighted(ov,0.55,img,0.45,0,img)
+        cv2.rectangle(img,(bx1,by1),(bx2,by2),tc,1,cv2.LINE_AA)
+        cv2.rectangle(img,(bx1,by1),(bx1+2,by2),tc,-1)
+        (tw,_),_=cv2.getTextSize(tl,FONT_BOLD,0.50,1)
+        cv2.putText(img,tl,(bx1+((bx2-bx1)-tw)//2+1,32),FONT_BOLD,0.50,tc,1,cv2.LINE_AA)
 
         # FPS
         fc=C_GREEN if fps>=20 else(C_AMBER if fps>=10 else C_RED)
@@ -1068,14 +1070,17 @@ class HUD:
     # -------------------------------------------------------------------------
     def alert(self, img, W, H, text, blink, t):
         if not blink: return
-        pulse=0.7+0.3*math.sin(t*5)
-        (tw,th),_ = cv2.getTextSize(text,FONT_BODY,0.88,2)
+        pulse=0.55+0.35*math.sin(t*5)
+        (tw,th),_ = cv2.getTextSize(text,FONT_BODY,0.60,1)
         x=(W-tw)//2; y0=H//2-th-30
-        overlay=img.copy()
-        cv2.rectangle(overlay,(x-20,y0-14),(x+tw+20,y0+th+18),C_RED,-1)
-        cv2.addWeighted(overlay,pulse*0.88,img,1-pulse*0.88,0,img)
-        cv2.rectangle(img,(x-20,y0-14),(x+tw+20,y0+th+18),C_WHITE,1)
-        cv2.putText(img,text,(x,y0+th+4),FONT_BODY,0.88,C_WHITE,2,cv2.LINE_AA)
+        bx1,by1,bx2,by2 = x-18,y0-12,x+tw+18,y0+th+16
+        ov=img.copy()
+        cv2.rectangle(ov,(bx1,by1),(bx2,by2),C_PANEL,-1)
+        cv2.addWeighted(ov,0.70,img,0.30,0,img)
+        edge = tuple(int(c*pulse) for c in C_RED)
+        cv2.rectangle(img,(bx1,by1),(bx2,by2),edge,1,cv2.LINE_AA)
+        cv2.rectangle(img,(bx1,by1),(bx1+2,by2),C_RED,-1)
+        cv2.putText(img,text,(x,y0+th+2),FONT_BODY,0.60,C_WHITE,1,cv2.LINE_AA)
 
     # -------------------------------------------------------------------------
     # Thermal PiP
@@ -1086,7 +1091,7 @@ class HUD:
         sc=pw/float(mask.shape[1]); ph=max(1,int(mask.shape[0]*sc))
         pip=cv2.applyColorMap(cv2.resize(mask,(pw,ph)),cv2.COLORMAP_INFERNO)
         x0=W-pw-22; y0=self.TOPBAR_H+200
-        self._panel(img,x0-2,y0-2,x0+pw+2,y0+ph+2,0.90,C_RED)
+        self._panel(img,x0-2,y0-2,x0+pw+2,y0+ph+2,0.68,C_RED)
         img[y0:y0+ph,x0:x0+pw]=pip
         cv2.putText(img,"THERMAL",(x0+4,y0+13),FONT_MONO,0.34,C_RED,1)
 
@@ -1097,7 +1102,7 @@ class HUD:
         h,w=frame.shape[:2]; cx,cy=w/2,h/2
         Y,X=np.ogrid[:h,:w]
         d=np.sqrt(((X-cx)/(cx+1))**2+((Y-cy)/(cy+1))**2)
-        vg=1.0-np.clip(d*0.46,0,0.56)
+        vg=1.0-np.clip(d*0.30,0,0.34)
         fr=frame.astype(np.float32)
         for c in range(3): fr[:,:,c]*=vg
         return fr.astype(np.uint8)
@@ -1301,7 +1306,6 @@ def main():
         if paused:     hud.alert(disp,W,H,"[ PAUSED ]",True,t)
 
         disp=hud.vignette(disp)
-        disp=hud.scanlines(disp)
 
         if rec.recording: rec.write(disp)
         cv2.imshow(WIN_NAME,fit_to_window(disp))
