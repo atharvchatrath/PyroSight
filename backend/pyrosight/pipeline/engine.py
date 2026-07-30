@@ -83,7 +83,7 @@ class PerceptionEngine:
         self.heading = HeadingFilter()
         self.breadcrumbs = BreadcrumbTrail(config.nav.crumb_spacing_m)
         self.guidance = GuidanceEngine(config.nav)
-        self.alerts = AlertEngine()
+        self.alerts = AlertEngine(config.physio)
         self.diagnostics = Diagnostics()
         # ESP32 alert channel (LEDs / buzzer / haptic): silent no-op when
         # no board is attached.
@@ -368,6 +368,7 @@ class PerceptionEngine:
         rgb = self.sensors.rgb.read() if self.sensors.rgb else None
         temp_c = self.sensors.thermal.read() if self.sensors.thermal else None
         imu = self.sensors.imu.read() if self.sensors.imu else None
+        physio = self.sensors.physio.read() if self.sensors.physio else None
         if rgb is None:
             # No imagery yet (e.g. waiting for the browser camera link):
             # publish a heartbeat so the UI can show status instead of a
@@ -462,7 +463,7 @@ class PerceptionEngine:
         diag = self.diagnostics.sample(self._fps, self._latency_ms,
                                        sensor_health, self.sim_mode)
         fired = self.alerts.evaluate(tracks, thermal_result, smoke_density,
-                                     nav, diag)
+                                     nav, diag, physio=physio)
 
         # ---- emergency mode (manual OR auto on genuinely critical
         # conditions) — a fire visible across the room is NOT an emergency;
@@ -533,6 +534,7 @@ class PerceptionEngine:
             "search": self._search.to_dict(),
             "assistant": self.assistant.current,
             "emergency": emergency,
+            "physio": physio,
             "diagnostics": diag,
             "prefs": {**self.prefs, "effective_brightness": round(eff_brightness, 2)},
             "last_alert": self.alerts.latest,

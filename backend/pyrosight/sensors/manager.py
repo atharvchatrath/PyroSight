@@ -13,6 +13,7 @@ from ..config import PyroSightConfig
 from ..sim.world import SimWorld
 from .base import Sensor
 from .imu import BNO085IMU, SimulatedIMU, StaticIMU
+from .physio import BlePhysioStrap, SimulatedPhysio
 from .rgb import BrowserRGB, PiCameraRGB, SimulatedRGB, WebcamRGB
 from .stereo import StereoRGB
 from .thermal import LeptonThermal, SimulatedThermal
@@ -25,6 +26,7 @@ class SensorSuite:
         self.rgb: Optional[Sensor] = None
         self.thermal: Optional[Sensor] = None
         self.imu: Optional[Sensor] = None
+        self.physio: Optional[Sensor] = None
         self.rgb_is_sim = False
 
     def start(self) -> None:
@@ -34,6 +36,7 @@ class SensorSuite:
         self.rgb = self._start_rgb(s.rgb_source, sim_mode)
         self.thermal = self._start_thermal(s.thermal_source, sim_mode)
         self.imu = self._start_imu(s.imu_source, sim_mode)
+        self.physio = self._start_physio(s.physio_source, sim_mode)
 
     def _start_rgb(self, source: str, sim_mode: bool) -> Sensor:
         s = self.config.sensors
@@ -90,14 +93,27 @@ class SensorSuite:
         static.start()
         return static
 
+    def _start_physio(self, source: str, sim_mode: bool) -> Optional[Sensor]:
+        if source in ("ble",) or (source == "auto" and not sim_mode):
+            ble = BlePhysioStrap()
+            if ble.start():
+                return ble
+        if sim_mode:
+            sim = SimulatedPhysio(self.world)
+            sim.start()
+            return sim
+        # Live mode without a strap: physiological monitoring is genuinely
+        # absent, not estimated — there is no proxy signal worth faking.
+        return None
+
     def health(self) -> Dict[str, Dict[str, Any]]:
         out: Dict[str, Dict[str, Any]] = {}
-        for sensor in (self.rgb, self.thermal, self.imu):
+        for sensor in (self.rgb, self.thermal, self.imu, self.physio):
             if sensor is not None:
                 out[sensor.kind] = sensor.health()
         return out
 
     def stop(self) -> None:
-        for sensor in (self.rgb, self.thermal, self.imu):
+        for sensor in (self.rgb, self.thermal, self.imu, self.physio):
             if sensor is not None:
                 sensor.stop()

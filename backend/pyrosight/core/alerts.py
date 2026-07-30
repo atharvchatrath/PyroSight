@@ -11,6 +11,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
+from ..config import PhysioConfig
+
 
 class AlertEngine:
     COOLDOWNS = {
@@ -22,11 +24,13 @@ class AlertEngine:
         "route_blocked": 15.0,
         "battery_low": 120.0,
         "sensor_degraded": 60.0,
+        "heat_stress": 60.0,
     }
 
-    def __init__(self):
+    def __init__(self, physio_cfg: Optional[PhysioConfig] = None):
         self._last_fired: Dict[str, float] = {}
         self._latest: Optional[Dict[str, Any]] = None
+        self._physio_cfg = physio_cfg or PhysioConfig()
 
     @property
     def latest(self) -> Optional[Dict[str, Any]]:
@@ -34,7 +38,8 @@ class AlertEngine:
 
     def evaluate(self, tracks: List[Dict[str, Any]], thermal: Dict[str, Any],
                  smoke_density: float, nav: Dict[str, Any],
-                 diagnostics: Dict[str, Any]) -> List[Dict[str, Any]]:
+                 diagnostics: Dict[str, Any],
+                 physio: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         alerts: List[Dict[str, Any]] = []
 
         # Fire alerts are tier-gated: a confirmed track (thermal-corroborated
@@ -101,6 +106,26 @@ class AlertEngine:
                 alerts.append(self._fire(
                     "sensor_degraded", "warning",
                     f"{kind.upper()} SENSOR DEGRADED"))
+
+        # Physiological load: a firefighter cannot self-assess heat stress
+        # under exertion — sustained elevated HR/core temp is a withdraw
+        # signal that has to come from outside their own perception.
+        if physio is not None:
+            hr = physio.get("heart_rate_bpm")
+            core = physio.get("core_temp_c")
+            pc = self._physio_cfg
+            if ((core is not None and core >= pc.core_temp_critical_c)
+                    or (hr is not None and hr >= pc.hr_critical_bpm)):
+                alerts.append(self._fire(
+                    "heat_stress", "critical",
+                    f"HEAT STRESS CRITICAL — HR {int(hr or 0)} "
+                    f"CORE {core:.1f}°C — WITHDRAW NOW" if core is not None
+                    else f"HEAT STRESS CRITICAL — HR {int(hr or 0)} — WITHDRAW NOW"))
+            elif ((core is not None and core >= pc.core_temp_elevated_c)
+                    or (hr is not None and hr >= pc.hr_elevated_bpm)):
+                alerts.append(self._fire(
+                    "heat_stress", "warning",
+                    f"ELEVATED EXERTION — HR {int(hr or 0)} — MONITOR"))
 
         fired = [a for a in alerts if a is not None]
         if fired:

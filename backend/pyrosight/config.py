@@ -69,12 +69,24 @@ class SensorConfig:
     rgb_source: str = _env("RGB_SOURCE", "auto")        # auto | webcam | picamera | sim
     thermal_source: str = _env("THERMAL_SOURCE", "auto")  # auto | lepton | sim
     imu_source: str = _env("IMU_SOURCE", "auto")        # auto | bno085 | sim
+    physio_source: str = _env("PHYSIO_SOURCE", "auto")  # auto | ble | sim
     webcam_index: int = _env_int("WEBCAM_INDEX", 0)
     rgb_width: int = _env_int("RGB_WIDTH", 640)
     rgb_height: int = _env_int("RGB_HEIGHT", 480)
     # FLIR Lepton 3.5 native resolution.
     thermal_width: int = 160
     thermal_height: int = 120
+
+
+@dataclass
+class PhysioConfig:
+    """Thresholds for the physiological load monitor (heart rate + core
+    temp). Defaults follow NFPA 1583 heat-stress guidance for firefighters:
+    sustained HR > 180 or core temp > 39.5C is a withdraw-now signal."""
+    hr_elevated_bpm: int = _env_int("HR_ELEVATED_BPM", 150)
+    hr_critical_bpm: int = _env_int("HR_CRITICAL_BPM", 180)
+    core_temp_elevated_c: float = _env_float("CORE_TEMP_ELEVATED_C", 38.5)
+    core_temp_critical_c: float = _env_float("CORE_TEMP_CRITICAL_C", 39.5)
 
 
 @dataclass
@@ -146,6 +158,7 @@ class PyroSightConfig:
     nav: NavConfig = field(default_factory=NavConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     engine: EngineConfig = field(default_factory=EngineConfig)
+    physio: PhysioConfig = field(default_factory=PhysioConfig)
     platform: str = field(default_factory=platform_name)
 
     def resolved_mode(self) -> str:
