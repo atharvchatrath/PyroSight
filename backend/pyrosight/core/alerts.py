@@ -26,6 +26,7 @@ class AlertEngine:
         "sensor_degraded": 60.0,
         "heat_stress": 60.0,
         "teammate_signal_lost": 60.0,
+        "floor_hazard": 20.0,
     }
 
     def __init__(self, physio_cfg: Optional[PhysioConfig] = None):
@@ -130,6 +131,19 @@ class AlertEngine:
                 alerts.append(self._fire(
                     "heat_stress", "warning",
                     f"ELEVATED EXERTION — HR {int(hr or 0)} — MONITOR"))
+
+        # Floor integrity: a hazard reported here comes from MEASURED stereo
+        # depth (see vision/floor.py), never a guess — treat it as gravely
+        # as fire, because a firefighter trusts a clear track with their
+        # body weight.
+        floor = [t for t in tracks if t["cls"] == "floor_hazard"
+                and t["tier"] != "possible"]
+        if floor:
+            f = floor[0]
+            hint = f.get("label_hint") or "UNSTABLE FLOOR"
+            alerts.append(self._fire(
+                "floor_hazard", "critical",
+                f"FLOOR HAZARD — {hint} — TEST BEFORE STEPPING"))
 
         # Mesh: a teammate who was visible and goes silent is worth a nudge
         # (dead battery, radio out of range, or worse) — but only the

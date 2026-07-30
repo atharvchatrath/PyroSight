@@ -30,6 +30,7 @@ REGISTRY: Dict[str, DetectionClass] = {c.name: c for c in [
     DetectionClass("hallway",     "HALLWAY",     "structure",  3, 2.60, "#94a3b8"),
     DetectionClass("fire",        "FIRE",        "hazard",    10, None, "#f87171"),
     DetectionClass("hotspot",     "HOTSPOT",     "hazard",     8, None, "#fb923c"),
+    DetectionClass("floor_hazard","FLOOR HAZARD","hazard",     9, None, "#f97316"),
 ]}
 
 # Open-vocabulary prompts for YOLO-World. Several phrasings per class —

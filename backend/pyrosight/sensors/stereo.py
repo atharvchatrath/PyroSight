@@ -107,6 +107,13 @@ class StereoDepth:
             return None
         return float(np.median(valid))
 
+    def snapshot(self) -> Optional[np.ndarray]:
+        """Thread-safe copy of the current depth map (metres, NaN = no
+        match), for consumers that need to scan the whole field rather than
+        look up one box (e.g. floor integrity)."""
+        with self._lock:
+            return None if self._depth is None else self._depth.copy()
+
     def coverage(self) -> float:
         """Fraction of the depth map with a valid match (match quality)."""
         with self._lock:

@@ -49,6 +49,7 @@ from ..sim.world import SimWorld
 from ..vision import pseudo_thermal
 from ..vision.detector import NullDetector, build_detector
 from ..vision.fire import FireDetector
+from ..vision.floor import FloorIntegrityAnalyzer
 from ..vision.fusion import fuse
 from ..vision.smoke import SmokeEstimator
 from ..vision.thermal_analysis import ThermalAnalyzer
@@ -86,6 +87,7 @@ class PerceptionEngine:
         self.guidance = GuidanceEngine(config.nav)
         self.alerts = AlertEngine(config.physio)
         self.diagnostics = Diagnostics()
+        self.floor_analyzer = FloorIntegrityAnalyzer()
         self.mesh = MeshLink(config.mesh)
         # ESP32 alert channel (LEDs / buzzer / haptic): silent no-op when
         # no board is attached.
@@ -430,6 +432,10 @@ class PerceptionEngine:
                 measured = depth.distance_for_box(det["box"], (w, h))
                 if measured is not None:
                     det["dist_m_measured"] = measured
+            # Floor integrity rides the same fused-detection -> tracker path
+            # as everything else, so a hole gets the same multi-frame
+            # confirmation and honest tiering as a fire or a victim.
+            fused_dets.extend(self.floor_analyzer.analyze(depth, (w, h)))
         tracks = self.tracker.update(fused_dets, (w, h))
         self._emit_track_events(tracks)
 
