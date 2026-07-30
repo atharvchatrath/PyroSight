@@ -16,5 +16,9 @@ onnxruntime; platform_machine != "armv7l"
 #   pip install ultralytics
 # Offline speech-to-text on the Pi (see docs/DEPLOYMENT.md):
 #   pip install vosk sounddevice
+# Offline text-to-speech for the audio-first zero-visibility fallback:
+#   pip install pyttsx3
+# BLE heart-rate strap for physiological load monitoring:
+#   pip install bleak
 # Raspberry Pi hardware drivers (Pi only):
 #   pip install picamera2 adafruit-circuitpython-bno08x

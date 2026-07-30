@@ -56,6 +56,7 @@ from ..vision.thermal_analysis import ThermalAnalyzer
 from ..vision.tracker import TemporalTracker
 from ..vision.visual_odometry import VisualYaw
 from ..voice import commands as voice_grammar
+from ..voice.announcer import AudioAnnouncer
 from .worker import DetectionWorker
 
 
@@ -89,6 +90,7 @@ class PerceptionEngine:
         self.diagnostics = Diagnostics()
         self.floor_analyzer = FloorIntegrityAnalyzer()
         self.mesh = MeshLink(config.mesh)
+        self.announcer = AudioAnnouncer(config.audio)
         # ESP32 alert channel (LEDs / buzzer / haptic): silent no-op when
         # no board is attached.
         self.peripherals = Esp32Peripherals()
@@ -500,6 +502,12 @@ class PerceptionEngine:
         self.prefs["emergency"] = emergency
         # Power-saving engages automatically on low battery.
         self.prefs["power_saving"] = diag.get("power_state") in ("saver", "critical")
+        # Audio-first fallback: a screen is useless in zero visibility, so
+        # guidance switches to spoken instructions instead of a HUD nobody
+        # can see.
+        audio_first_active = (smoke_vis == "NEAR ZERO") or emergency
+        self.prefs["audio_first_active"] = audio_first_active
+        self.announcer.update(audio_first_active, nav.get("instruction", ""), fired)
         # Effective brightness: emergency forces a high-visibility floor.
         eff_brightness = (max(self.prefs["brightness"], 1.35) if emergency
                           else self.prefs["brightness"])

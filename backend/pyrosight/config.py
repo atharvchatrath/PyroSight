@@ -103,6 +103,15 @@ class MeshConfig:
 
 
 @dataclass
+class AudioConfig:
+    """Offline TTS guidance for zero-visibility conditions — no cloud calls,
+    consistent with the rest of the platform."""
+    enabled: bool = _env_bool("AUDIO_ENABLED", True)
+    instruction_interval_s: float = _env_float("AUDIO_INSTRUCTION_INTERVAL_S", 5.0)
+    alert_cooldown_s: float = _env_float("AUDIO_ALERT_COOLDOWN_S", 8.0)
+
+
+@dataclass
 class VisionConfig:
     # Detector chain: onnx -> ultralytics -> none. Sim mode uses ground truth.
     onnx_model: str = _env("ONNX_MODEL", str(MODELS_DIR / "yolov8n.onnx"))
@@ -173,6 +182,7 @@ class PyroSightConfig:
     engine: EngineConfig = field(default_factory=EngineConfig)
     physio: PhysioConfig = field(default_factory=PhysioConfig)
     mesh: MeshConfig = field(default_factory=MeshConfig)
+    audio: AudioConfig = field(default_factory=AudioConfig)
     platform: str = field(default_factory=platform_name)
 
     def resolved_mode(self) -> str:
