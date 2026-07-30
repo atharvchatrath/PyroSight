@@ -129,6 +129,24 @@ def _ipt(p): return (int(round(p[0])), int(round(p[1])))
 def clamp(v, lo, hi): return max(lo, min(hi, v))
 def dft(rh, bh): return None if not bh or bh <= 0 else (rh * FOCAL) / bh / 12.0
 
+def screen_size():
+    """Actual monitor resolution, bypassing cv2.getWindowImageRect() — on
+    the Win32 HighGUI backend that call can report a stale/partial rect
+    right after WND_PROP_FULLSCREEN takes effect, which is what makes
+    fullscreen look wrong (under-filled or wrong aspect) for a frame or on
+    some driver/DPI combos. GetSystemMetrics is authoritative and instant."""
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            try: user32.SetProcessDPIAware()
+            except Exception: pass
+            w, h = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+            if w > 0 and h > 0: return w, h
+        except Exception:
+            pass
+    return None
+
 def rect_iou(a, b):
     ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
     ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
@@ -1174,10 +1192,15 @@ def main():
     cv2.resizeWindow(WIN_NAME, 1280, 720)
 
     def fit_to_window(img):
-        try:
-            _,_,ww,wh=cv2.getWindowImageRect(WIN_NAME)
-        except Exception:
-            ww,wh=0,0
+        ww=wh=0
+        if fullscreen:
+            ss = screen_size()
+            if ss: ww, wh = ss
+        if ww<=0 or wh<=0:
+            try:
+                _,_,ww,wh=cv2.getWindowImageRect(WIN_NAME)
+            except Exception:
+                ww,wh=0,0
         h,w=img.shape[:2]
         if ww<=0 or wh<=0 or (ww==w and wh==h): return img
         scale=min(ww/w, wh/h)
