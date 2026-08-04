@@ -41,6 +41,20 @@ def _iou(a, b) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def _containment(inner, outer) -> float:
+    """Fraction of `inner`'s area inside `outer`."""
+    ix1, iy1 = max(inner[0], outer[0]), max(inner[1], outer[1])
+    ix2, iy2 = min(inner[2], outer[2]), min(inner[3], outer[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    area = (inner[2] - inner[0]) * (inner[3] - inner[1])
+    return inter / area if area > 0 else 0.0
+
+
+# A detection mostly inside an existing track's box (or vice versa) is the
+# same object with a re-cropped box, not a new one.
+NEST_MATCH = 0.70
+
+
 # Monocular pinhole ranging is only meaningful over a limited band. A
 # partially-visible or occluded object yields a small box, which the model
 # turns into a huge distance — reporting "193 FT" inside a corridor is
@@ -191,23 +205,45 @@ class TemporalTracker:
     def update(self, detections: List[Dict[str, Any]],
                frame_wh: Tuple[int, int]) -> List[Dict[str, Any]]:
         frame_w = frame_wh[0]
-        unmatched = list(range(len(detections)))
-        for tr in self.tracks:
-            best_iou, best_j = 0.0, -1
-            for j in unmatched:
-                if detections[j]["cls"] != tr.cls:
+
+        # Association is scored across every pair, then assigned best-first.
+        # Walking the track list in order let an older track claim a detection
+        # that belonged to a nearer one — two victims swap identities, and
+        # their labels and distances appear to jump between bodies.
+        #
+        # Containment sits alongside IoU because a detector routinely tightens
+        # from full body to torso between frames: IoU falls under the match
+        # threshold, the real track coasts, and a duplicate track opens on the
+        # same human.
+        pairs = []
+        for ti, tr in enumerate(self.tracks):
+            for j, det in enumerate(detections):
+                if det["cls"] != tr.cls:
                     continue
-                iou = _iou(tr.box, detections[j]["box"])
-                if iou > best_iou:
-                    best_iou, best_j = iou, j
-            if best_j >= 0 and best_iou >= self.cfg.iou_match:
-                tr.update(detections[best_j], frame_w)
-                unmatched.remove(best_j)
-            else:
+                iou = _iou(tr.box, det["box"])
+                nest = max(_containment(det["box"], tr.box),
+                           _containment(tr.box, det["box"]))
+                score = max(iou, nest * 0.9 if nest >= NEST_MATCH else 0.0)
+                if score >= self.cfg.iou_match:
+                    pairs.append((score, ti, j))
+        pairs.sort(key=lambda p: -p[0])
+
+        taken_tracks = set()
+        taken_dets = set()
+        for _score, ti, j in pairs:
+            if ti in taken_tracks or j in taken_dets:
+                continue
+            taken_tracks.add(ti)
+            taken_dets.add(j)
+            self.tracks[ti].update(detections[j], frame_w)
+
+        for ti, tr in enumerate(self.tracks):
+            if ti not in taken_tracks:
                 tr.coast()
 
-        for j in unmatched:
-            self.tracks.append(Track(detections[j], self.cfg, frame_w))
+        for j in range(len(detections)):
+            if j not in taken_dets:
+                self.tracks.append(Track(detections[j], self.cfg, frame_w))
 
         self.tracks = [t for t in self.tracks
                        if t.misses <= self.cfg.max_misses and t.conf > 0.10]

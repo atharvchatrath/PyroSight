@@ -15,7 +15,7 @@ analysis, and produces one unified detection list where each item may carry
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .thermal_analysis import ThermalAnalyzer
 
@@ -26,6 +26,13 @@ FIRE_BOOST = 0.18
 # always renders as a dashed "POSSIBLE FIRE" — visibly uncertain, never a
 # confident claim, and never alarms.
 UNCONFIRMED_FIRE_CAP = 0.48
+
+# Egress evidence policy (see the EGRESS block in fuse()).
+EGRESS_CLASSES = ("exit_sign", "window")
+EGRESS_BOOST = 0.22
+# A classical-only sign or window is real enough to walk toward and not
+# certain enough to call confirmed: this sits just under confirmed_conf.
+EGRESS_CLASSICAL_CAP = 0.70
 
 
 def _iou(a: List[float], b: List[float]) -> float:
@@ -51,7 +58,8 @@ def fuse(detections: List[Dict[str, Any]],
          thermal: Dict[str, Any],
          rgb_wh: Tuple[int, int],
          thermal_wh: Tuple[int, int],
-         thermal_independent: bool = True) -> List[Dict[str, Any]]:
+         thermal_independent: bool = True,
+         egress_regions: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """`thermal_independent` is False when the thermal field is *derived
     from the RGB image* (no Lepton attached). A derived field is not
     independent evidence — treating it as confirmation would let a false
@@ -127,6 +135,43 @@ def fuse(detections: List[Dict[str, Any]],
             fused.append(det)
         else:
             fused.append(det)
+
+    # --- EGRESS corroboration -------------------------------------------
+    # Exit signs and windows are engineered visual targets, so the classical
+    # detector (vision/egress.py) is often the stronger witness of the two.
+    #   * neural + classical at the same place -> promoted, confirmable
+    #   * classical alone                      -> surfaced, capped at LIKELY
+    #     (an object worth walking toward, not yet a certainty)
+    #   * neural alone                         -> unchanged, usually POSSIBLE
+    # The way out of a burning building is worth reporting on one good
+    # witness; it is not worth claiming certainty on one.
+    regions = egress_regions or []
+    matched_regions = set()
+    for det in fused:
+        if det["cls"] not in EGRESS_CLASSES:
+            continue
+        for i, reg in enumerate(regions):
+            if reg["cls"] != det["cls"]:
+                continue
+            if (_iou(det["box"], reg["box"]) > 0.15
+                    or _overlap_frac(reg["box"], det["box"]) > 0.45
+                    or _overlap_frac(det["box"], reg["box"]) > 0.45):
+                matched_regions.add(i)
+                det["rgb_corroborated"] = True
+                det["conf"] = min(0.95, det["conf"] + EGRESS_BOOST)
+                break
+
+    for i, reg in enumerate(regions):
+        if i in matched_regions:
+            continue
+        fused.append({
+            "cls": reg["cls"],
+            "conf": min(EGRESS_CLASSICAL_CAP, reg["conf"]),
+            "box": reg["box"],
+            "thermal_confirmed": False,
+            "rgb_corroborated": False,
+            "source": "classical",
+        })
 
     # --- unmatched hotspots become first-class detections (measured
     # thermal only: an RGB-derived field would just re-emit the same

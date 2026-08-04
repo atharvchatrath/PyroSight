@@ -104,7 +104,6 @@ frontend/              Next.js 14 + TypeScript + Tailwind (HUD + dashboard)
 scripts/               cross-platform launchers (sh / ps1 / bat)
 deploy/                Raspberry Pi 5 install + systemd units
 docs/                  ARCHITECTURE · HARDWARE · DEPLOYMENT
-legacy/                v5 single-file OpenCV prototype
 helmet_sim.py          v7 standalone OpenCV HUD (runs independently of the platform)
 ```
 

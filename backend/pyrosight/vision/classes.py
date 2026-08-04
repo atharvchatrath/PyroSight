@@ -62,8 +62,13 @@ WORLD_PROMPTS: List[str] = list(WORLD_PROMPT_TO_CLASS.keys())
 # are not calibrated across prompts: exit signs legitimately score lower than
 # persons, and a single global threshold either floods the HUD or goes blind.
 CLASS_CONF_THRESHOLDS: Dict[str, float] = {
-    "person": 0.35,
-    "firefighter": 0.35,
+    # Persons carry the highest bar in the taxonomy. A weak "person" is the
+    # most expensive false positive the platform can make — it sends a crew
+    # to a poster — and the classes that matter for finding a real victim
+    # (body heat, motion, persistence) are corroborated downstream in
+    # fusion.py and spoof.py rather than by lowering this floor.
+    "person": 0.60,
+    "firefighter": 0.55,
     "door": 0.25,
     "exit_sign": 0.18,
     "window": 0.22,   # indoor windows score low in open-vocab models

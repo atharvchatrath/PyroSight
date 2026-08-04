@@ -16,9 +16,14 @@ from pyrosight.pipeline.engine import PerceptionEngine
 
 
 def _engine():
-    """Engine instance without starting sensors or the loop thread."""
+    """Engine instance without starting sensors or the loop thread.
+
+    Recording off: a test run must never deposit a session in the operational
+    incident archive, where it would sit next to real after-action records.
+    """
     cfg = load_config()
     cfg.mode = "sim"
+    cfg.engine.record_incidents = False
     return PerceptionEngine(cfg, TelemetryHub(), FrameStore())
 
 

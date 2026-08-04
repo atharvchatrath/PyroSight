@@ -1,42 +1,57 @@
 "use client";
 
-// Top-right navigation tracker ("GPS panel"): a north-up mini-map plotting
-// where the firefighter has been (breadcrumb trail), where they are now
-// (position + heading wedge), the entry point, and where they're going
-// (target bearing ray). Position comes from the positioning stack — SITL
-// truth in sim, pedestrian dead reckoning on the helmet, UWB when fitted.
+// Tactical mini-map — north-up, small, and deliberately quiet.
+//
+// It answers "where am I, where have I been, what's around me" and nothing
+// else. Detections are placed by projecting each track's horizontal position
+// through the camera FOV at its ranged distance; that is an estimate, so the
+// map draws them as soft marks rather than precise pins, and the map never
+// grows large enough to compete with the real world for attention.
 
 import { NavState, SystemState } from "@/lib/types";
+import { COLOR, colorOf, isSuppressed, roleOf } from "@/lib/design";
+import { useSmoothAngle } from "@/lib/useSmoothValue";
 
-const SIZE = 148;
+const HFOV_DEG = 70; // Pi Camera Module 3 wide-ish horizontal field of view
+const FT_PER_M = 3.28084;
+
 const STATUS_COLOR: Record<NavState["status"], string> = {
-  CLEAR: "#4ade80",
-  CAUTION: "#fbbf24",
-  BLOCKED: "#f87171",
+  CLEAR: COLOR.nav,
+  CAUTION: COLOR.warn,
+  BLOCKED: COLOR.critical,
 };
 
-export default function MiniMap({ state }: { state: SystemState }) {
+export default function MiniMap({
+  state,
+  size = 150,
+  showDetections = true,
+}: {
+  state: SystemState;
+  size?: number;
+  showDetections?: boolean;
+}) {
   const nav = state.nav;
   const bc = nav.breadcrumbs;
-  const heading = state.heading.deg;
+  const heading = useSmoothAngle(state.heading.deg, 1.2, 0.02);
   const pos = bc.position;
   const trail = bc.trail ?? [];
   const entry = bc.entry;
+  const R = size / 2 - 9;
 
-  // Fit all points (position, trail, entry) with padding; ≥12 m window.
+  // Window: fit trail + entry, minimum 12 m across.
+  const cx0 = pos ? pos[0] : 0;
+  const cy0 = pos ? pos[1] : 0;
+  let span = 12;
   const pts: [number, number][] = [...trail];
   if (pos) pts.push(pos);
   if (entry) pts.push(entry);
-  const cx = pos ? pos[0] : 0;
-  const cy = pos ? pos[1] : 0;
-  let span = 12;
   for (const [x, y] of pts) {
-    span = Math.max(span, Math.abs(x - cx) * 2.4, Math.abs(y - cy) * 2.4);
+    span = Math.max(span, Math.abs(x - cx0) * 2.4, Math.abs(y - cy0) * 2.4);
   }
-  const scale = (SIZE - 24) / span;
+  const scale = (size - 26) / span;
   const toPx = (x: number, y: number): [number, number] => [
-    SIZE / 2 + (x - cx) * scale,
-    SIZE / 2 - (y - cy) * scale,
+    size / 2 + (x - cx0) * scale,
+    size / 2 - (y - cy0) * scale,
   ];
 
   const trailPath = trail
@@ -46,67 +61,123 @@ export default function MiniMap({ state }: { state: SystemState }) {
     })
     .join(" ");
 
-  // Target ray: absolute bearing = heading + relative bearing.
+  // Detections projected into map space (estimate — see header note).
+  const marks = showDetections
+    ? state.tracks
+        .filter((t) => t.dist_ft != null && t.conf >= 0.45 && !isSuppressed(t))
+        .map((t) => {
+          const cxFrac = (t.box[0] + t.box[2]) / 2 / (state.frame.w || 640);
+          const bearing = heading + (cxFrac - 0.5) * HFOV_DEG;
+          const rangeM = (t.dist_ft as number) / FT_PER_M;
+          const a = (bearing * Math.PI) / 180;
+          const x = size / 2 + Math.sin(a) * rangeM * scale;
+          const y = size / 2 - Math.cos(a) * rangeM * scale;
+          return { id: t.id, x, y, color: colorOf(roleOf(t)), r: t.category === "hazard" ? 4.5 : 3.5 };
+        })
+        .filter((m) => Math.hypot(m.x - size / 2, m.y - size / 2) < R - 2)
+    : [];
+
+  // Coverage cells, drawn faintly beneath everything else.
+  const cells = state.search?.cells ?? [];
+  const cellM = state.search?.cell_m ?? 1.5;
+
   let ray: string | null = null;
   if (nav.target) {
     const abs = ((heading + nav.target.rel_bearing_deg) * Math.PI) / 180;
-    const len = SIZE / 2 - 10;
-    ray = `M ${SIZE / 2} ${SIZE / 2} l ${Math.sin(abs) * len} ${-Math.cos(abs) * len}`;
+    ray = `M ${size / 2} ${size / 2} l ${Math.sin(abs) * R} ${-Math.cos(abs) * R}`;
   }
 
   const headRad = (heading * Math.PI) / 180;
   const wedge = (() => {
-    const [px, py] = [SIZE / 2, SIZE / 2];
     const p = (r: number, a: number) =>
-      `${px + Math.sin(headRad + a) * r},${py - Math.cos(headRad + a) * r}`;
-    return `${p(9, 0)} ${p(6, 2.5)} ${p(2.5, Math.PI)} ${p(6, -2.5)}`;
+      `${size / 2 + Math.sin(headRad + a) * r},${size / 2 - Math.cos(headRad + a) * r}`;
+    return `${p(10, 0)} ${p(6.5, 2.4)} ${p(2.5, Math.PI)} ${p(6.5, -2.4)}`;
   })();
 
   return (
-    <div className="rounded border border-edge bg-ink/70 backdrop-blur-[2px] p-1">
-      <svg width={SIZE} height={SIZE}>
-        {/* range rings + north */}
-        <circle cx={SIZE / 2} cy={SIZE / 2} r={SIZE / 2 - 10} fill="none"
-          stroke="#1d2833" strokeWidth="1" />
-        <circle cx={SIZE / 2} cy={SIZE / 2} r={(SIZE / 2 - 10) / 2} fill="none"
-          stroke="#1d2833" strokeWidth="1" />
-        <text x={SIZE / 2} y={11} textAnchor="middle" fontSize="9"
-          fill="#8b9bab" fontFamily="ui-monospace, monospace">N</text>
+    <div className="panel-float p-1.5" style={{ fontFamily: "var(--font-sans)" }}>
+      <svg width={size} height={size}>
+        <defs>
+          <radialGradient id="ps-map-fade">
+            <stop offset="60%" stopColor="#22d3ee" stopOpacity="0.05" />
+            <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <circle cx={size / 2} cy={size / 2} r={R} fill="url(#ps-map-fade)" />
 
-        {/* breadcrumb trail */}
-        {trailPath && (
-          <path d={trailPath} fill="none" stroke="#22d3ee" strokeWidth="1.5"
-            strokeOpacity="0.65" strokeDasharray="3 2" />
-        )}
-
-        {/* entry point */}
-        {entry && (() => {
-          const [ex, ey] = toPx(entry[0], entry[1]);
+        {/* search coverage */}
+        {cells.map((c, i) => {
+          const [x, y] = toPx(c.x * cellM, c.y * cellM);
+          const s = Math.max(2, cellM * scale);
           return (
-            <g>
-              <rect x={ex - 4} y={ey - 4} width="8" height="8" fill="none"
-                stroke="#4ade80" strokeWidth="1.5" />
-              <text x={ex} y={ey + 14} textAnchor="middle" fontSize="8"
-                fill="#4ade80" fontFamily="ui-monospace, monospace">ENT</text>
-            </g>
+            <rect
+              key={i}
+              x={x - s / 2}
+              y={y - s / 2}
+              width={s}
+              height={s}
+              fill={c.level === 2 ? COLOR.victim : COLOR.warn}
+              opacity={c.level === 2 ? 0.14 : 0.09}
+            />
           );
-        })()}
+        })}
 
-        {/* target bearing ray */}
-        {ray && (
-          <path d={ray} stroke={STATUS_COLOR[nav.status]} strokeWidth="1.5"
-            strokeDasharray="4 3" strokeOpacity="0.9" />
+        {/* range rings */}
+        <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="rgba(150,180,210,0.18)" />
+        <circle cx={size / 2} cy={size / 2} r={R / 2} fill="none" stroke="rgba(150,180,210,0.12)" />
+        <text x={size / 2} y={11} textAnchor="middle" fontSize="9" fontWeight={600}
+          letterSpacing="0.1em" fill="#8b9bab">
+          N
+        </text>
+
+        {trailPath && (
+          <path d={trailPath} fill="none" stroke={COLOR.nav} strokeWidth="1.6"
+            strokeOpacity="0.55" strokeLinecap="round" strokeLinejoin="round" />
         )}
 
-        {/* current position + heading wedge */}
-        <polygon points={wedge} fill="#22d3ee" stroke="#04070a" strokeWidth="0.8" />
+        {entry &&
+          (() => {
+            const [ex, ey] = toPx(entry[0], entry[1]);
+            return (
+              <g>
+                <rect x={ex - 4} y={ey - 4} width="8" height="8" rx="1.5" fill="none"
+                  stroke={COLOR.victim} strokeWidth="1.5" />
+                <text x={ex} y={ey + 14} textAnchor="middle" fontSize="8"
+                  letterSpacing="0.1em" fill={COLOR.victim}>
+                  ENT
+                </text>
+              </g>
+            );
+          })()}
+
+        {ray && (
+          <path d={ray} stroke={STATUS_COLOR[nav.status]} strokeWidth="1.4"
+            strokeDasharray="5 4" strokeOpacity="0.8" />
+        )}
+
+        {marks.map((m) => (
+          <g key={m.id}>
+            <circle cx={m.x} cy={m.y} r={m.r + 3} fill={m.color} opacity={0.16} />
+            <circle cx={m.x} cy={m.y} r={m.r} fill={m.color} opacity={0.85} />
+          </g>
+        ))}
+
+        <polygon points={wedge} fill={COLOR.nav} stroke="#04070a" strokeWidth="0.8" />
       </svg>
-      <div className="flex justify-between px-1 text-[9px] text-dim font-mono">
-        <span>{pos ? `${pos[0].toFixed(0)},${pos[1].toFixed(0)}m` : "NO FIX"}</span>
+      {/* Explicit separators, not just flex spacing: at 150 px the three
+          fields sat shoulder to shoulder and read as one run-on string
+          ("0,19M29 CRUMBSENT 124FT"). */}
+      <div className="flex items-center justify-center gap-1.5 px-1 pt-1
+        text-[9px] text-dim num tracking-hud whitespace-nowrap">
+        <span>{pos ? `${pos[0].toFixed(0)}, ${pos[1].toFixed(0)} M` : "NO FIX"}</span>
+        <span className="opacity-40">·</span>
         <span>{bc.count} CRUMBS</span>
-        <span>
-          {nav.entry_distance_ft != null ? `ENT ${nav.entry_distance_ft}FT` : ""}
-        </span>
+        {nav.entry_distance_ft != null && (
+          <>
+            <span className="opacity-40">·</span>
+            <span>ENT {nav.entry_distance_ft} FT</span>
+          </>
+        )}
       </div>
     </div>
   );

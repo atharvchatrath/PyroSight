@@ -11,6 +11,12 @@ set -euo pipefail
 PORT="${PYROSIGHT_UI_PORT:-3100}"
 URL="http://localhost:${PORT}/hud"
 
+# The helmet panel is a 0.39" 1920x1080 micro-OLED seen through an eyepiece.
+# At 1:1 the interface renders at desktop density — legible on a monitor,
+# useless at 10 mm across — so the kiosk scales the entire UI. 1.75 suits a
+# 0.39" FHD eyepiece; raise it for a smaller panel, lower it for a 0.49".
+SCALE="${PYROSIGHT_HUD_SCALE:-1.75}"
+
 # Find whichever Chromium this OS release provides.
 CHROMIUM=""
 for candidate in chromium chromium-browser /usr/bin/chromium /usr/bin/chromium-browser; do
@@ -36,6 +42,7 @@ done
 exec "$CHROMIUM" \
     --kiosk \
     --app="$URL" \
+    --force-device-scale-factor="$SCALE" \
     --noerrdialogs \
     --disable-infobars \
     --disable-session-crashed-bubble \

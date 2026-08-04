@@ -65,7 +65,17 @@ class BreadcrumbTrail:
         return (self.crumbs[0][0], self.crumbs[0][1]) if self.crumbs else None
 
     def mark_entry_here(self) -> None:
-        """Voice command 'mark entry': restart the trail at current position."""
+        """Voice command 'mark entry': restart the trail at current position.
+
+        With no position estimate yet — live mode before the first stride, or
+        a build with no IMU — this DEFINES the origin instead of doing
+        nothing. The command's entire purpose is to anchor the trail at the
+        door, and the previous behaviour returned "ENTRY POINT MARKED" while
+        recording no anchor at all, leaving return-to-entry with nothing to
+        navigate back to.
+        """
+        if self._pos is None:
+            self._pos = (0.0, 0.0)
         self.crumbs = []
         self._maybe_drop()
 

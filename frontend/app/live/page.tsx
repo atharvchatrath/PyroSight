@@ -11,7 +11,6 @@ import { useEffect, useRef } from "react";
 import VideoCanvas from "@/components/VideoCanvas";
 import CommandBar from "@/components/dashboard/CommandBar";
 import MiniMap from "@/components/hud/MiniMap";
-import StatusCluster from "@/components/hud/StatusCluster";
 import { useTelemetry } from "@/lib/useTelemetry";
 import { useUplink } from "@/lib/uplink";
 
@@ -120,14 +119,9 @@ export default function LiveTestPage() {
             <div className="relative">
               <VideoCanvas feed="fused" state={state} />
               {state && (
-                <>
-                  <div className="absolute top-2 left-2 rounded border border-edge/60 bg-ink/60 backdrop-blur-[2px] px-2.5 py-2">
-                    <StatusCluster state={state} />
-                  </div>
-                  <div className="absolute top-2 right-2">
-                    <MiniMap state={state} />
-                  </div>
-                </>
+                <div className="absolute top-2 right-2">
+                  <MiniMap state={state} size={130} />
+                </div>
               )}
             </div>
             {state && (

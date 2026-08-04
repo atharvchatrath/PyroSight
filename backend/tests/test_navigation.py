@@ -34,6 +34,37 @@ def test_breadcrumb_trail_and_return():
     assert target[1] < 5.0  # points back toward entry
 
 
+def test_mark_entry_anchors_the_trail_without_a_position_fix():
+    """'mark entry' at the door, before any stride has been dead-reckoned.
+
+    Field failure this covers: live mode with no IMU has no position estimate
+    yet, and the command used to ack "ENTRY POINT MARKED" while recording
+    nothing — leaving return-to-entry with no anchor for the rest of the
+    incident.
+    """
+    bc = BreadcrumbTrail(spacing_m=1.0)
+    assert bc.position is None
+    bc.mark_entry_here()
+    assert bc.entry == (0.0, 0.0), "entry must exist immediately after marking"
+    assert bc.position == (0.0, 0.0)
+
+    # And the trail keeps working from that origin.
+    for _ in range(6):
+        bc.update_step(0.0)          # six strides north
+    assert len(bc.crumbs) >= 3
+    assert bc.distance_to_entry_m() > 2.0
+    assert bc.return_target() is not None
+
+
+def test_mark_entry_rebases_an_existing_trail():
+    bc = BreadcrumbTrail(spacing_m=1.0)
+    for i in range(6):
+        bc.update_absolute(0.0, float(i))
+    bc.mark_entry_here()
+    assert bc.entry == (0.0, 5.0), "re-marking anchors at the current position"
+    assert len(bc.crumbs) == 1
+
+
 def test_guidance_exit_live_and_memory():
     g = GuidanceEngine(NavConfig())
     g.set_objective("find_exit")

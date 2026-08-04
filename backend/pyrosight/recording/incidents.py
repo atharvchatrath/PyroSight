@@ -21,21 +21,35 @@ class IncidentRecorder:
         self.dir = data_dir / "incidents" / self.session_id
         self._lock = threading.Lock()
         self._fh = None
-        if enabled:
-            self.dir.mkdir(parents=True, exist_ok=True)
-            self._fh = open(self.dir / "events.jsonl", "a", encoding="utf-8")
+
+    def _open(self) -> None:
+        """Create the session on first write, not at construction.
+
+        Anything that merely imports the app builds an engine — a test run, a
+        preflight check, a second backend that loses the race for port 8000 —
+        and an eager recorder turns each of those into an empty incident
+        session sitting in the after-action archive next to real ones. A
+        session now exists only once something actually happened in it.
+        """
+        if self._fh is not None:
+            return
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self._fh = open(self.dir / "events.jsonl", "a", encoding="utf-8")
 
     def log(self, kind: str, payload: Dict[str, Any]) -> None:
-        if not self.enabled or self._fh is None:
+        if not self.enabled:
             return
         record = {"ts": time.time(), "kind": kind, **payload}
         with self._lock:
-            self._fh.write(json.dumps(record) + "\n")
-            self._fh.flush()
+            self._open()
+            self._fh.write(json.dumps(record) + "\n")  # type: ignore[union-attr]
+            self._fh.flush()                           # type: ignore[union-attr]
 
     def snapshot(self, name: str, jpeg: bytes) -> Optional[str]:
         if not self.enabled:
             return None
+        with self._lock:
+            self._open()
         fname = f"{name}_{time.strftime('%H%M%S')}.jpg"
         (self.dir / fname).write_bytes(jpeg)
         return fname

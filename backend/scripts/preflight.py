@@ -14,6 +14,8 @@ Exit status: 0 all good (warnings allowed), 1 if any hard check failed.
 
 from __future__ import annotations
 
+import os
+import pathlib
 import shutil
 import sys
 import time
@@ -168,18 +170,98 @@ def check_voice() -> None:
                "pip install vosk sounddevice")
 
 
+def check_stereo() -> None:
+    """Waveshare Dual IMX219: both CSI ports, plus whether it is calibrated.
+
+    Uncalibrated stereo still ranges, but off datasheet geometry — the number
+    on the HUD is then approximate in a way the firefighter cannot see.
+    """
+    from pyrosight.config import load_config
+    from pyrosight.sensors.stereo import CALIB_PATH, StereoRGB
+    cfg = load_config().sensors
+    cam = StereoRGB(cfg.rgb_width, cfg.rgb_height)
+    if not cam.start():
+        record("Stereo pair", WARN, "no dual IMX219 detected",
+               "Single-camera builds range monocularly (assumed object size). "
+               "For measured range fit the Waveshare dual module to cam0+cam1.")
+        return
+    frame = cam.read()
+    cam.stop()
+    if frame is None:
+        record("Stereo pair", FAIL, "stereo opened but produced no frames",
+               "Reseat both CSI ribbons; check `rpicam-hello --camera 1`.")
+        return
+    if CALIB_PATH.exists():
+        record("Stereo pair", PASS,
+               f"dual IMX219 {frame.shape[1]}x{frame.shape[0]}, calibrated")
+    else:
+        record("Stereo pair", WARN,
+               f"dual IMX219 {frame.shape[1]}x{frame.shape[0]}, UNCALIBRATED",
+               "Run scripts/calibrate_stereo.py — until then range comes from "
+               "datasheet geometry, not measurement.")
+
+
 def check_peripherals() -> None:
     from pyrosight.peripherals.esp32 import Esp32Peripherals
     esp = Esp32Peripherals()
-    if esp.available:
-        esp.notify_alert("info")     # visible/audible confirmation on the rig
-        esp.close()
-        record("Alert peripherals", PASS,
-               f"ESP32 on {getattr(esp, 'port', 'serial')} (test pulse sent)")
-    else:
+    if not esp.available:
         record("Alert peripherals", WARN, "no ESP32 serial device",
                "LEDs/buzzer/haptic unavailable. Set PYROSIGHT_ESP32_PORT if the "
                "board is on a non-standard port.")
+        record("Pack telemetry", WARN, "no ESP32 — battery state unavailable",
+               "A USB-C PD bank exposes no gauge to the Pi; without the ESP32 "
+               "reporting it the HUD shows NO GAUGE and cannot warn on low charge.")
+        return
+
+    esp.notify_alert("info")         # visible/audible confirmation on the rig
+    record("Alert peripherals", PASS,
+           f"ESP32 on {getattr(esp, 'port', 'serial')} (test pulse sent)")
+
+    # Give the firmware a moment to push a battery line before judging it.
+    pack = None
+    deadline = time.time() + 3.0
+    while time.time() < deadline and pack is None:
+        pack = esp.battery()
+        time.sleep(0.2)
+    esp.close()
+    if pack is None:
+        record("Pack telemetry", WARN, "ESP32 present but sending no battery lines",
+               'Firmware should emit {"kind":"battery","percent":N} (fuel gauge) '
+               'or {"kind":"battery","volts":V,"amps":A} (INA219 shunt).')
+    elif "percent" in pack:
+        record("Pack telemetry", PASS, f"fuel gauge {float(pack['percent']):.0f}%")
+    else:
+        record("Pack telemetry", PASS,
+               f"shunt {pack.get('volts', '?')} V / {pack.get('amps', '?')} A "
+               "(coulomb-counted, shown as approximate)")
+
+
+def check_hud_display() -> None:
+    """The monocular micro-OLED: attached, at its native mode, and scaled.
+
+    A 1920x1080 panel 0.39" across renders desktop-density UI at roughly
+    0.15 mm per character. The kiosk must scale it or the HUD is unreadable
+    in the helmet even though it looks perfect over VNC.
+    """
+    scale = os.environ.get("PYROSIGHT_HUD_SCALE", "1.75")
+    modes = pathlib.Path("/sys/class/drm")
+    connected = []
+    if modes.exists():
+        for card in modes.glob("card*-*"):
+            try:
+                if (card / "status").read_text().strip() == "connected":
+                    mode = (card / "modes").read_text().splitlines()
+                    connected.append(f"{card.name.split('-', 1)[1]} "
+                                     f"{mode[0] if mode else 'mode?'}")
+            except OSError:
+                continue
+    if not connected:
+        record("HUD display", WARN, "no connected display detected",
+               "Plug the micro-OLED into micro-HDMI and set its native mode in "
+               "/boot/firmware/config.txt.")
+    else:
+        record("HUD display", PASS,
+               f"{', '.join(connected)} · UI scale {scale}x")
 
 
 def check_storage() -> None:
@@ -229,8 +311,9 @@ def main() -> int:
     print("=" * 68)
     checks = [
         check_platform, check_python_deps, check_detector, check_rgb,
-        check_thermal, check_imu, check_voice, check_peripherals,
-        check_storage, check_thermals_and_power,
+        check_thermal, check_stereo, check_imu, check_voice,
+        check_peripherals, check_hud_display, check_storage,
+        check_thermals_and_power,
     ]
     for fn in checks:
         try:

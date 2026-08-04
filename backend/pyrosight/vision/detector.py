@@ -199,7 +199,9 @@ class OnnxDetector(BaseDetector):
             if not _passes_class_filters(cls_name, float(confs[i]), box, w, h):
                 continue
             results.append({"cls": cls_name, "conf": float(confs[i]), "box": box})
-        return results
+        # IoU-NMS above cannot see a head-and-shoulders box nested inside a
+        # full-body box; this can.
+        return dedupe_same_class(results, self.cfg.nms_iou)
 
 
 class UltralyticsDetector(BaseDetector):
@@ -263,17 +265,10 @@ class UltralyticsDetector(BaseDetector):
                     continue
                 merged.setdefault(cls_name, []).append(
                     {"cls": cls_name, "conf": conf, "box": [x1, y1, x2, y2]})
-        # Cross-prompt NMS: "person" and "person crawling" both fire on the
-        # same body — keep the strongest box per overlapping cluster.
-        out: List[Dict[str, Any]] = []
-        for dets in merged.values():
-            dets.sort(key=lambda d: -d["conf"])
-            kept: List[Dict[str, Any]] = []
-            for d in dets:
-                if all(_box_iou(d["box"], k["box"]) < 0.55 for k in kept):
-                    kept.append(d)
-            out.extend(kept)
-        return out
+        # Cross-prompt dedupe: "person" and "person crawling" both fire on
+        # the same body, often at different crops — overlap or nesting.
+        flat: List[Dict[str, Any]] = [d for dets in merged.values() for d in dets]
+        return dedupe_same_class(flat, 0.55)
 
 
 def _box_iou(a, b) -> float:
@@ -283,6 +278,61 @@ def _box_iou(a, b) -> float:
     union = ((a[2] - a[0]) * (a[3] - a[1])
              + (b[2] - b[0]) * (b[3] - b[1]) - inter)
     return inter / union if union > 0 else 0.0
+
+
+def _containment(inner, outer) -> float:
+    """Fraction of `inner`'s area that lies inside `outer`."""
+    ix1, iy1 = max(inner[0], outer[0]), max(inner[1], outer[1])
+    ix2, iy2 = min(inner[2], outer[2]), min(inner[3], outer[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    area = (inner[2] - inner[0]) * (inner[3] - inner[1])
+    return inter / area if area > 0 else 0.0
+
+
+# A box almost entirely inside another box of the same class is the same
+# object seen twice.
+NEST_CONTAINMENT = 0.65
+
+
+def dedupe_same_class(dets: List[Dict[str, Any]], iou_thr: float,
+                      contain_thr: float = NEST_CONTAINMENT) -> List[Dict[str, Any]]:
+    """Suppress duplicate detections of one object, by overlap AND nesting.
+
+    IoU alone cannot see nesting. A detector at close range routinely returns
+    both a full-body box and a head-and-shoulders box for one person: their
+    IoU can sit around 0.25 — under every sane NMS threshold — while the
+    smaller box is ~95% *inside* the larger. The result reaches the HUD as two
+    victims at the same distance, which is a counting error on the number that
+    matters most in a search. Containment catches it; IoU is kept for the
+    partially-overlapping case.
+
+    Boxes are compared only within a class, so a person standing in a doorway
+    never suppresses the door.
+    """
+    by_cls: Dict[str, List[Dict[str, Any]]] = {}
+    for d in dets:
+        by_cls.setdefault(d["cls"], []).append(d)
+
+    out: List[Dict[str, Any]] = []
+    for group in by_cls.values():
+        group.sort(key=lambda d: -d["conf"])   # strongest evidence wins
+        kept: List[Dict[str, Any]] = []
+        for d in group:
+            duplicate = False
+            for k in kept:
+                if _box_iou(d["box"], k["box"]) >= iou_thr:
+                    duplicate = True
+                    break
+                # Either nesting direction counts: the kept box may be the
+                # small one if the detector scored the crop higher.
+                if (_containment(d["box"], k["box"]) >= contain_thr
+                        or _containment(k["box"], d["box"]) >= contain_thr):
+                    duplicate = True
+                    break
+            if not duplicate:
+                kept.append(d)
+        out.extend(kept)
+    return out
 
 
 def build_detector(cfg: VisionConfig) -> BaseDetector:

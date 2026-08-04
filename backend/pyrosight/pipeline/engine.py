@@ -40,6 +40,19 @@ from ..navigation.heading import HeadingFilter
 from ..navigation.mesh import MeshLink, buddy_bearings
 from ..navigation.search import SearchCoverage
 from ..peripherals.esp32 import Esp32Peripherals
+
+# Helmet buttons -> voice intents. Any other id is taken as an intent name
+# directly ({"kind":"button","id":"FIND_EXIT"}), so firmware can drive the
+# whole grammar without a backend change.
+BUTTON_INTENTS = {
+    "ack": "EXIT_EMERGENCY",     # acknowledge / stand down the alarm
+    "mayday": "EMERGENCY_MODE",
+    "exit": "FIND_EXIT",
+    "entry": "RETURN_TO_ENTRY",
+    "mark": "MARK_ENTRY",
+    "thermal": "SHOW_THERMAL",
+    "repeat": "REPEAT_ALERT",
+}
 from ..recording.incidents import IncidentRecorder
 from ..sensors.imu import StaticIMU
 from ..sensors.manager import SensorSuite
@@ -48,8 +61,10 @@ from ..sim.render import RGB_FX
 from ..sim.world import SimWorld
 from ..vision import pseudo_thermal
 from ..vision.detector import NullDetector, build_detector
+from ..vision.egress import EgressDetector
 from ..vision.fire import FireDetector
 from ..vision.floor import FloorIntegrityAnalyzer
+from ..vision.spoof import StaticSubjectMonitor, framed_by_rectangle
 from ..vision.fusion import fuse
 from ..vision.smoke import SmokeEstimator
 from ..vision.thermal_analysis import ThermalAnalyzer
@@ -78,6 +93,10 @@ class PerceptionEngine:
         self.worker = (None if self.sim_mode
                        else DetectionWorker(self.detector))
         self.fire = FireDetector()
+        self.egress = EgressDetector()
+        # Anti-spoof state: is that a person, or a picture of one.
+        self.static_subjects = StaticSubjectMonitor()
+        self._last_spoof_event = 0.0
         # Live mode auto-baselines smoke estimation on this camera/scene.
         self.smoke = SmokeEstimator(calibrate=not self.sim_mode)
         self.visual_yaw = VisualYaw()
@@ -87,13 +106,15 @@ class PerceptionEngine:
         self.breadcrumbs = BreadcrumbTrail(config.nav.crumb_spacing_m)
         self.guidance = GuidanceEngine(config.nav)
         self.alerts = AlertEngine(config.physio)
-        self.diagnostics = Diagnostics()
         self.floor_analyzer = FloorIntegrityAnalyzer()
         self.mesh = MeshLink(config.mesh)
         self.announcer = AudioAnnouncer(config.audio)
-        # ESP32 alert channel (LEDs / buzzer / haptic): silent no-op when
-        # no board is attached.
+        # ESP32 alert channel (LEDs / buzzer / haptic) and pack telemetry:
+        # silent no-op when no board is attached.
         self.peripherals = Esp32Peripherals()
+        # The ESP32 is also the only source of battery state on the helmet —
+        # a USB-C PD power bank exposes no gauge to the Pi.
+        self.diagnostics = Diagnostics(esp32=self.peripherals)
         self.recorder = IncidentRecorder(DATA_DIR, config.engine.record_incidents)
 
         self._commands: "queue.Queue[Dict[str, Any]]" = queue.Queue()
@@ -194,6 +215,79 @@ class PerceptionEngine:
         self.hub.push_event("command", {"severity": "info", **ack})
         self.recorder.log("command", ack)
         return ack
+
+    def _reject_framed_people(self, rgb: np.ndarray,
+                              detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Drop person detections enclosed by a picture frame or screen bezel.
+
+        Rejections are announced rather than silent: a suppressed victim is
+        exactly the kind of decision that must be auditable after the fact, so
+        each one is pushed as a system event and written to the incident log.
+        """
+        out: List[Dict[str, Any]] = []
+        for det in detections:
+            if det.get("cls") not in ("person", "firefighter"):
+                out.append(det)
+                continue
+            framed = framed_by_rectangle(rgb, det["box"])
+            if framed is None:
+                out.append(det)
+                continue
+            now = time.time()
+            if now - self._last_spoof_event > 8.0:
+                self._last_spoof_event = now
+                payload = {
+                    "severity": "info",
+                    "text": ("PERSON REJECTED — FRAMED IMAGE (screen or picture), "
+                             f"{int(det['conf'] * 100)}% raw"),
+                    "rect": framed["rect"],
+                }
+                self.hub.push_event("system", payload)
+                self.recorder.log("spoof_reject", payload)
+        return out
+
+    def _apply_static_subject_policy(self, tracks: List[Dict[str, Any]]) -> None:
+        """Cap motionless, thermally-uncorroborated people below CONFIRMED.
+
+        A living person is never perfectly still relative to the room. An
+        image of one is. But an unconscious victim is very nearly still too,
+        so this only lowers the claim — it never removes the detection.
+        """
+        live_ids = set()
+        for t in tracks:
+            if t["cls"] not in ("person", "firefighter"):
+                continue
+            live_ids.add(t["id"])
+            self.static_subjects.update(t["id"], t["box"])
+            if t.get("thermal_confirmed"):
+                continue          # body heat settles it; motion is moot
+            if not self.static_subjects.is_static(t["id"]):
+                continue
+            if t["conf"] >= self.config.vision.confirmed_conf:
+                t["conf"] = round(self.config.vision.confirmed_conf - 0.06, 3)
+                t["tier"] = "likely"
+                t["display"] = t["display"].replace("POSSIBLE ", "")
+            t["label_hint"] = "no independent motion"
+        self.static_subjects.forget(live_ids)
+
+    def _drain_hardware_buttons(self) -> None:
+        """Physical buttons on the ESP32 -> the same intents voice uses.
+
+        A gloved hand on a helmet switch has to reach the same code path as a
+        spoken command, or the two drift apart and the button becomes the
+        thing nobody trusts. Unknown ids are ignored rather than guessed at.
+        """
+        for pressed in self.peripherals.take_buttons():
+            intent = BUTTON_INTENTS.get(pressed.lower(), pressed.upper())
+            if intent not in voice_grammar.ACKS:
+                continue
+            self._commands.put({"intent": intent,
+                                "ack": voice_grammar.ACKS[intent],
+                                "transcript": f"[button:{pressed}]"})
+            self.hub.push_event("command", {
+                "severity": "info", "ok": True, "intent": intent,
+                "ack": voice_grammar.ACKS[intent],
+                "transcript": f"[button:{pressed}]"})
 
     def ingest_frame(self, jpeg: bytes) -> bool:
         """Browser camera ingest (/ws/ingest). Frames land in a standing
@@ -348,6 +442,7 @@ class PerceptionEngine:
         last = time.time()
         while self._running:
             t0 = time.time()
+            self._drain_hardware_buttons()
             self._apply_commands()
             try:
                 self._tick()
@@ -389,6 +484,10 @@ class PerceptionEngine:
         # ---- classical CV (every frame) ----
         smoke_density = self.smoke.update(rgb)
         fire_regions = self.fire.detect(rgb)
+        # Exit signs and windows are engineered targets that classical CV
+        # reads more reliably than an open-vocabulary model does; fusion
+        # treats this as corroboration, not as a second opinion to average.
+        egress_regions = self.egress.detect(rgb)
 
         # ---- neural / sim detections ----
         if self.sim_mode and self.sensors.rgb_is_sim:
@@ -421,11 +520,20 @@ class PerceptionEngine:
             thermal_result = {"stats": None, "hotspots": [], "body_regions": []}
             thermal_wh = (cfg.sensors.thermal_width, cfg.sensors.thermal_height)
 
+        # ---- anti-spoof: a picture of a person is not a person ----
+        # Applied before fusion so a framed subject never reaches the tracker,
+        # the alert engine, or the victim count. Sim ground truth is exempt —
+        # there are no posters in the SITL world, and the test would only cost
+        # frame time.
+        if not (self.sim_mode and self.sensors.rgb_is_sim):
+            detections = self._reject_framed_people(rgb, detections)
+
         # ---- fusion + temporal tracking ----
         # An RGB-derived thermal field is NOT independent evidence.
         fused_dets = fuse(detections, fire_regions, thermal_result, (w, h),
                           thermal_wh,
-                          thermal_independent=(thermal_source in ("lepton", "sim")))
+                          thermal_independent=(thermal_source in ("lepton", "sim")),
+                          egress_regions=egress_regions)
         # Stereo depth (Waveshare dual IMX219): attach MEASURED range so the
         # tracker uses observation instead of the monocular size assumption.
         depth = getattr(self.sensors.rgb, "depth", None)
@@ -439,6 +547,8 @@ class PerceptionEngine:
             # confirmation and honest tiering as a fire or a victim.
             fused_dets.extend(self.floor_analyzer.analyze(depth, (w, h)))
         tracks = self.tracker.update(fused_dets, (w, h))
+        if not (self.sim_mode and self.sensors.rgb_is_sim):
+            self._apply_static_subject_policy(tracks)
         self._emit_track_events(tracks)
 
         # ---- navigation ----

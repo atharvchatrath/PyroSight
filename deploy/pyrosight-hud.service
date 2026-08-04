@@ -12,6 +12,10 @@ Type=simple
 User=pyrosight
 Environment=DISPLAY=:0
 Environment=PYROSIGHT_UI_PORT=3100
+# UI scale for the 0.39" 1920x1080 micro-OLED. Desktop density is unreadable
+# at that physical size; 1.75 is the starting point for a 0.39" eyepiece,
+# lower it for a 0.49" panel.
+Environment=PYROSIGHT_HUD_SCALE=1.75
 ExecStart=/opt/pyrosight/deploy/hud-kiosk.sh
 Restart=always
 RestartSec=5

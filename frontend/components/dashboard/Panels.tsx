@@ -1,78 +1,191 @@
 "use client";
 
-// Command-dashboard panels. Each is a small, self-contained card; the grid
-// in app/dashboard/page.tsx composes them.
+// Command-dashboard panels.
+//
+// The dashboard is the same design language as the helmet — same palette,
+// same confidence bands, same typography — at desk density instead of glance
+// density. Incident command and the firefighter must never be looking at two
+// different vocabularies for the same situation.
 
 import { useEffect, useMemo, useState } from "react";
 import {
   Diagnostics,
   SystemState,
   TelemetryEvent,
+  Track,
   apiUrl,
 } from "@/lib/types";
-import { clockTime, severityColor } from "@/lib/format";
+import {
+  COLOR,
+  colorOf,
+  confColor,
+  displayLabel,
+  isPossible,
+  isSuppressed,
+  roleOf,
+} from "@/lib/design";
+import { clockTime } from "@/lib/format";
+import { deriveAlerts } from "@/components/hud/CriticalAlert";
+import { useHeatTrend } from "@/components/hud/ThermalOverlay";
 
 export function Panel({
   title,
+  right,
   children,
   className = "",
 }: {
   title: string;
+  right?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
     <section className={`panel flex flex-col min-h-0 ${className}`}>
-      <h2 className="panel-title">{title}</h2>
-      <div className="flex-1 min-h-0 overflow-auto p-2">{children}</div>
+      <div className="flex items-center justify-between gap-3 border-b border-edge px-4 py-2.5">
+        <h2 className="text-[11px] font-semibold tracking-wide2 text-dim uppercase">
+          {title}
+        </h2>
+        {right}
+      </div>
+      <div className="flex-1 min-h-0 overflow-auto p-3">{children}</div>
     </section>
+  );
+}
+
+export function StatTile({
+  label,
+  value,
+  sub,
+  color = "#e8f0f6",
+  fill,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  color?: string;
+  fill?: number; // 0..1 → progress bar
+}) {
+  return (
+    <div className="border border-edge bg-white/[0.02] px-3 py-2.5">
+      <div className="cap leading-none">{label}</div>
+      <div className="mt-1.5 text-[19px] font-semibold num leading-none" style={{ color }}>
+        {value}
+      </div>
+      {fill != null && (
+        <div className="mt-2 h-1 rounded-full bg-white/10 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500 ease-hud"
+            style={{ width: `${Math.max(2, Math.min(100, fill * 100))}%`, background: color }}
+          />
+        </div>
+      )}
+      {sub && <div className="mt-1.5 cap">{sub}</div>}
+    </div>
   );
 }
 
 // ---------------------------------------------------------------- detections
 
-export function DetectionLog({ state }: { state: SystemState }) {
+function TrackRow({ t }: { t: Track }) {
+  const color = colorOf(roleOf(t));
+  const possible = isPossible(t);
   return (
-    <table className="w-full text-xs">
-      <thead className="text-dim text-left">
-        <tr>
-          <th className="pb-1">OBJECT</th>
-          <th>CONF</th>
-          <th>DIST</th>
-          <th>THERM</th>
-        </tr>
-      </thead>
-      <tbody>
-        {state.tracks.map((t) => (
-          <tr
-            key={t.id}
-            className="border-t border-edge/50 hover:bg-white/[0.02] transition-colors"
+    <li className="flex items-center gap-3 py-2 border-b border-edge/60 last:border-0">
+      <span
+        className="w-2 h-2 rounded-full shrink-0"
+        style={{ background: color, boxShadow: `0 0 8px ${color}`, opacity: possible ? 0.5 : 1 }}
+      />
+      <span
+        className="text-[13px] font-medium tracking-hud w-[11.5rem] truncate"
+        style={{ color: possible ? COLOR.unknown : "#e8f0f6" }}
+      >
+        {displayLabel(t)}
+      </span>
+      <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden shrink-0">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${Math.round(t.conf * 100)}%`, background: confColor(t.conf) }}
+        />
+      </div>
+      <span className="text-[12px] num w-10 text-right" style={{ color: confColor(t.conf) }}>
+        {Math.round(t.conf * 100)}%
+      </span>
+      <span className="text-[12px] num text-dim w-14 text-right">
+        {t.dist_ft != null ? `${Math.round(t.dist_ft)} ft` : "—"}
+      </span>
+      <span className="text-[12px] num text-dim w-16 text-right">
+        {t.max_temp_c != null ? `${Math.round(t.max_temp_c)}°C` : ""}
+      </span>
+      <span className="cap w-24 text-right truncate">
+        {t.thermal_confirmed ? "THERMAL ✓" : t.coasting ? "COASTING" : `${t.age.toFixed(0)}s`}
+      </span>
+    </li>
+  );
+}
+
+export function TrackList({
+  state,
+  category,
+  empty,
+}: {
+  state: SystemState;
+  category: Track["category"] | "all";
+  empty: string;
+}) {
+  const rows = state.tracks
+    .filter((t) => !isSuppressed(t))
+    .filter((t) => category === "all" || t.category === category)
+    .sort((a, b) => b.priority - a.priority || b.conf - a.conf);
+  if (rows.length === 0) return <div className="cap py-1">{empty}</div>;
+  return (
+    <ul>
+      {rows.map((t) => (
+        <TrackRow key={t.id} t={t} />
+      ))}
+    </ul>
+  );
+}
+
+/** Kept for compatibility with older imports. */
+export function DetectionLog({ state }: { state: SystemState }) {
+  return <TrackList state={state} category="all" empty="NO TRACKS" />;
+}
+
+// ------------------------------------------------------------------ alerts
+
+export function AlertsPanel({ state }: { state: SystemState }) {
+  const alerts = deriveAlerts(state);
+  if (alerts.length === 0) return <div className="cap">NOTHING REQUIRING ATTENTION</div>;
+  return (
+    <ul className="space-y-1.5">
+      {alerts.map((a) => {
+        const c =
+          a.severity === "critical" ? COLOR.critical : a.severity === "warning" ? COLOR.warn : COLOR.nav;
+        return (
+          <li
+            key={a.rule}
+            className="flex items-center gap-2.5 border px-3 py-2"
+            style={{ borderColor: `${c}44`, background: `${c}0f` }}
           >
-            <td className="py-1 font-bold" style={{ color: t.color }}>
-              {t.display}
-            </td>
-            <td className={t.tier === "possible" ? "text-danger" : "text-bright"}>
-              {Math.round(t.conf * 100)}%
-            </td>
-            <td className="text-dim">
-              {t.dist_ft != null ? `${Math.round(t.dist_ft)} ft` : "—"}
-            </td>
-            <td>{t.thermal_confirmed ? "✓" : ""}</td>
-          </tr>
-        ))}
-        {state.tracks.length === 0 && (
-          <tr>
-            <td colSpan={4} className="text-dim py-2">
-              No confirmed tracks.
-            </td>
-          </tr>
-        )}
-      </tbody>
-    </table>
+            <span className="w-1 h-4 rounded-full" style={{ background: c }} />
+            <span className="text-[13px] tracking-hud" style={{ color: c }}>
+              {a.text}
+            </span>
+            <span className="cap ml-auto">{a.severity}</span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
 // ------------------------------------------------------------------ timeline
+
+const SEV_COLOR: Record<string, string> = {
+  critical: COLOR.critical,
+  warning: COLOR.warn,
+  info: COLOR.nav,
+};
 
 export function EventTimeline({
   events,
@@ -81,23 +194,27 @@ export function EventTimeline({
   events: TelemetryEvent[];
   kinds?: string[];
 }) {
-  const list = (kinds ? events.filter((e) => kinds.includes(e.kind)) : events)
-    .slice()
-    .reverse();
+  const list = (kinds ? events.filter((e) => kinds.includes(e.kind)) : events).slice().reverse();
+  if (list.length === 0) return <div className="cap">NO EVENTS YET</div>;
   return (
-    <ul className="text-xs space-y-1">
-      {list.map((e) => (
-        <li key={e.seq} className="flex gap-2 border-b border-edge/40 pb-1">
-          <span className="text-dim shrink-0">{clockTime(e.ts)}</span>
-          <span className={`shrink-0 ${severityColor[e.severity ?? "info"]}`}>
-            {e.kind.toUpperCase()}
-          </span>
-          <span className="text-bright truncate">
-            {e.text ?? e.ack ?? e.transcript ?? ""}
-          </span>
-        </li>
-      ))}
-      {list.length === 0 && <li className="text-dim">No events yet.</li>}
+    <ul className="space-y-1.5">
+      {list.map((e) => {
+        const c = SEV_COLOR[e.severity ?? "info"] ?? COLOR.unknown;
+        return (
+          <li key={e.seq} className="flex gap-2.5 items-baseline">
+            <span className="text-[11px] num text-dim shrink-0 w-14">{clockTime(e.ts)}</span>
+            <span
+              className="text-[10px] font-semibold tracking-wide2 uppercase shrink-0 w-[4.5rem]"
+              style={{ color: c }}
+            >
+              {e.kind}
+            </span>
+            <span className="text-[12.5px] text-bright/90 truncate">
+              {e.text ?? e.ack ?? e.transcript ?? ""}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -105,45 +222,51 @@ export function EventTimeline({
 // ----------------------------------------------------------------- heat map
 
 export function HeatPanel({ state }: { state: SystemState }) {
+  const trend = useHeatTrend(state);
   const t = state.thermal;
-  if (!t) return <div className="text-dim text-xs">No thermal data.</div>;
+  if (!t) return <div className="cap">NO THERMAL DATA</div>;
+  const estimated = state.thermal_source === "rgb-estimate";
+
   return (
-    <div className="text-xs space-y-2">
-      <div className="grid grid-cols-3 gap-2 text-center">
-        {[
-          ["MIN", t.min_c, "text-accent"],
-          ["MEAN", t.mean_c, "text-bright"],
-          ["MAX", t.max_c, t.max_c > 250 ? "text-danger" : "text-warn"],
-        ].map(([label, val, cls]) => (
-          <div key={label as string} className="rounded-lg border border-edge/60 bg-panel2/60 p-2">
-            <div className="text-dim">{label}</div>
-            <div className={`text-lg font-bold ${cls}`}>
-              {Math.round(val as number)}°C
-            </div>
-          </div>
-        ))}
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2">
+        <StatTile label="MIN" value={`${Math.round(t.min_c)}°C`} color={COLOR.nav} />
+        <StatTile label="MEAN" value={`${Math.round(t.mean_c)}°C`} />
+        <StatTile
+          label="MAX"
+          value={`${Math.round(t.max_c)}°C`}
+          color={t.max_c > 250 ? COLOR.critical : COLOR.heat}
+          sub={
+            trend == null
+              ? "TREND SETTLING"
+              : `${trend >= 0 ? "▲" : "▼"} ${Math.abs(trend).toFixed(1)} °C/MIN`
+          }
+        />
       </div>
+      {estimated && (
+        <div className="cap" style={{ color: COLOR.warn }}>
+          RGB-DERIVED ESTIMATE — NOT RADIOMETRIC
+        </div>
+      )}
       <div>
-        <div className="text-dim mb-1">HOTSPOTS ({state.hotspots.length})</div>
-        {state.hotspots.map((h, i) => (
-          <div key={i} className="flex justify-between border-t border-edge/40 py-1">
-            <span
-              className={
-                h.severity === "critical"
-                  ? "text-danger font-bold"
-                  : h.severity === "severe"
-                  ? "text-warn font-bold"
-                  : "text-bright"
-              }
-            >
-              {h.severity.toUpperCase()}
-            </span>
-            <span>{Math.round(h.max_temp_c)}°C max</span>
-          </div>
-        ))}
-        {state.hotspots.length === 0 && (
-          <div className="text-dim">None above threshold.</div>
-        )}
+        <div className="cap mb-1.5">HOTSPOTS ({state.hotspots.length})</div>
+        {state.hotspots.length === 0 && <div className="cap">NONE ABOVE THRESHOLD</div>}
+        <ul className="space-y-1">
+          {state.hotspots.map((h, i) => {
+            const c =
+              h.severity === "critical" ? COLOR.critical : h.severity === "severe" ? COLOR.heat : COLOR.warn;
+            return (
+              <li key={i} className="flex items-center gap-2 text-[12px]">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: c }} />
+                <span className="tracking-hud" style={{ color: c }}>
+                  {h.severity.toUpperCase()}
+                </span>
+                <span className="num text-dim ml-auto">{Math.round(h.mean_temp_c)}°C mean</span>
+                <span className="num text-bright w-16 text-right">{Math.round(h.max_temp_c)}°C</span>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </div>
   );
@@ -152,71 +275,123 @@ export function HeatPanel({ state }: { state: SystemState }) {
 // ------------------------------------------------------------------ sensors
 
 export function SensorPanel({ diag }: { diag: Diagnostics }) {
-  const rows = Object.entries(diag.sensors);
+  const rows = Object.entries(diag.sensors ?? {});
   return (
-    <ul className="text-xs space-y-2">
-      {rows.map(([kind, s]) => (
-        <li key={kind} className="flex items-center gap-2">
-          <span
-            className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-              s.status === "ok"
-                ? "bg-ok"
-                : s.status === "simulated"
-                ? "bg-accent"
-                : s.status === "degraded" || s.status === "estimated"
-                ? "bg-warn"
-                : "bg-danger"
-            }`}
-          />
-          <span className="font-bold text-bright w-16">{kind.toUpperCase()}</span>
-          <span className="text-dim truncate">{s.detail}</span>
-        </li>
-      ))}
+    <ul className="space-y-2">
+      {rows.map(([kind, s]) => {
+        const c =
+          s.status === "ok"
+            ? COLOR.victim
+            : s.status === "simulated"
+            ? COLOR.nav
+            : s.status === "degraded" || s.status === "estimated"
+            ? COLOR.warn
+            : COLOR.critical;
+        return (
+          <li key={kind} className="flex items-center gap-2.5">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c, boxShadow: `0 0 8px ${c}` }} />
+            <span className="text-[12.5px] font-medium tracking-hud w-20">{kind.toUpperCase()}</span>
+            <span className="text-[12px] text-dim truncate flex-1">{s.detail}</span>
+            <span className="cap shrink-0">
+              {s.last_read_age_s != null ? `${s.last_read_age_s.toFixed(1)}s` : ""}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
 // -------------------------------------------------------------- diagnostics
 
+const BATTERY_SOURCE_LABEL: Record<string, string> = {
+  gauge: "FUEL GAUGE",
+  counted: "COULOMB COUNT",
+  host: "HOST BATTERY",
+  simulated: "SIMULATED",
+  none: "NO PACK TELEMETRY",
+};
+
 export function DiagnosticsPanel({ state }: { state: SystemState }) {
   const d = state.diagnostics;
-  const rows: [string, string, string][] = [
-    ["MODE", state.mode.toUpperCase(), "text-accent"],
-    ["DETECTOR", state.detector.toUpperCase(), "text-bright"],
-    ["INFERENCE", state.inference?.ms != null ? `${Math.round(state.inference.ms)} ms` : "—",
-      "text-bright"],
-    ["THERMAL SRC", (state.thermal_source ?? "—").toUpperCase(), "text-bright"],
-    ["FPS", d.fps.toFixed(1), d.fps >= 12 ? "text-ok" : "text-warn"],
-    ["LATENCY", `${Math.round(d.latency_ms)} ms`,
-      d.latency_ms < 80 ? "text-ok" : "text-warn"],
-    ["CPU", d.cpu_percent != null ? `${d.cpu_percent}%` : "—", "text-bright"],
-    ["MEMORY", d.mem_percent != null ? `${d.mem_percent}%` : "—", "text-bright"],
-    ["STORAGE", d.disk_percent != null ? `${d.disk_percent}%` : "—", "text-bright"],
-    ["CORE TEMP", d.cpu_temp_c != null ? `${d.cpu_temp_c}°C` : "n/a",
-      (d.cpu_temp_c ?? 0) < 75 ? "text-bright" : "text-warn"],
-    ["BATTERY", d.battery_percent != null ? `${d.battery_percent}%` : "—",
-      (d.battery_percent ?? 100) > 20 ? "text-ok" : "text-danger"],
-    ["RUNTIME", d.runtime_min != null ? `~${d.runtime_min} min` : "estimating…",
-      "text-bright"],
-    ["POWER", (d.power_state ?? "—").toUpperCase(),
-      d.power_state === "normal" ? "text-ok" : "text-warn"],
-    ["UPTIME", `${Math.floor(d.uptime_s / 60)}m ${d.uptime_s % 60}s`, "text-dim"],
-  ];
+  const pctColor = (v: number | null) =>
+    v == null ? COLOR.unknown : v > 88 ? COLOR.critical : v > 70 ? COLOR.warn : "#e8f0f6";
+
   return (
-    <table className="w-full text-xs">
-      <tbody>
-        {rows.map(([k, v, cls]) => (
-          <tr key={k} className="border-t border-edge/40 first:border-t-0">
-            <td className="py-1 text-dim">{k}</td>
-            <td className={`text-right font-bold ${cls}`}>{v}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="grid grid-cols-2 gap-2">
+      <StatTile
+        label="BATTERY"
+        value={
+          d.battery_percent != null
+            ? `${d.battery_source === "counted" ? "≈" : ""}${Math.round(d.battery_percent)}%`
+            : "NO GAUGE"
+        }
+        // Command must be able to tell a measured state of charge from a
+        // coulomb count that has been drifting since boot.
+        sub={
+          [
+            d.runtime_min != null ? `~${d.runtime_min} MIN LEFT` : null,
+            BATTERY_SOURCE_LABEL[d.battery_source ?? "none"],
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
+        color={
+          d.battery_percent == null
+            ? COLOR.unknown
+            : d.battery_percent > 40
+            ? COLOR.victim
+            : d.battery_percent > 20
+            ? COLOR.warn
+            : COLOR.critical
+        }
+        fill={d.battery_percent != null ? d.battery_percent / 100 : undefined}
+      />
+      <StatTile
+        label="CPU"
+        value={d.cpu_percent != null ? `${Math.round(d.cpu_percent)}%` : "—"}
+        sub={d.cpu_temp_c != null ? `CORE ${Math.round(d.cpu_temp_c)}°C` : undefined}
+        color={pctColor(d.cpu_percent)}
+        fill={d.cpu_percent != null ? d.cpu_percent / 100 : undefined}
+      />
+      <StatTile
+        label="MEMORY"
+        value={d.mem_percent != null ? `${Math.round(d.mem_percent)}%` : "—"}
+        color={pctColor(d.mem_percent)}
+        fill={d.mem_percent != null ? d.mem_percent / 100 : undefined}
+      />
+      <StatTile
+        label="STORAGE"
+        value={d.disk_percent != null ? `${Math.round(d.disk_percent)}%` : "—"}
+        color={pctColor(d.disk_percent)}
+        fill={d.disk_percent != null ? d.disk_percent / 100 : undefined}
+      />
+      <StatTile
+        label="FRAME RATE"
+        value={`${d.fps.toFixed(1)} FPS`}
+        color={d.fps >= 12 ? COLOR.victim : COLOR.warn}
+      />
+      <StatTile
+        label="LATENCY"
+        value={`${Math.round(d.latency_ms)} MS`}
+        color={d.latency_ms < 80 ? COLOR.victim : COLOR.warn}
+      />
+      <StatTile
+        label="DETECTOR"
+        value={state.detector.toUpperCase()}
+        sub={state.inference?.ms != null ? `${Math.round(state.inference.ms)} MS INFERENCE` : undefined}
+      />
+      <StatTile
+        label="POWER"
+        value={(d.power_state ?? "—").toUpperCase()}
+        sub={`UPTIME ${Math.floor(d.uptime_s / 60)}M ${d.uptime_s % 60}S`}
+        color={d.power_state === "normal" ? COLOR.victim : COLOR.warn}
+      />
+    </div>
   );
 }
 
-// -------------------------------------------------------------- incidents
+// --------------------------------------------------------------- incidents
 
 interface IncidentSession {
   id: string;
@@ -236,34 +411,33 @@ export function IncidentsPanel() {
     const id = setInterval(load, 15000);
     return () => clearInterval(id);
   }, []);
+  if (sessions.length === 0) return <div className="cap">NO RECORDINGS</div>;
   return (
-    <ul className="text-xs space-y-1">
+    <ul className="space-y-1.5">
       {sessions.map((s) => (
-        <li key={s.id} className="flex justify-between border-b border-edge/40 pb-1">
-          <span className="text-bright font-bold">{s.id}</span>
-          <span className="text-dim">
-            {s.events} ev · {s.snapshots} snap
+        <li key={s.id} className="flex items-center gap-3 text-[12.5px]">
+          <span className="num text-bright">{s.id}</span>
+          <span className="cap ml-auto">
+            {s.events} EVENTS · {s.snapshots} SNAPSHOTS
           </span>
         </li>
       ))}
-      {sessions.length === 0 && <li className="text-dim">No recordings.</li>}
     </ul>
   );
 }
 
-// ------------------------------------------------------------- search mode
+// -------------------------------------------------------------- search mode
 
 export function SearchPanel({ state }: { state: SystemState }) {
   const s = state.search;
   if (!s?.active) {
     return (
-      <div className="text-xs text-dim">
-        Search mode inactive. Say <span className="text-bright">“search room”</span>{" "}
-        or use the command bar to begin guided room search.
+      <div className="text-[12.5px] text-dim leading-relaxed">
+        Search mode inactive. Say <span className="text-bright">“search room”</span> or use the
+        command bar to begin a guided room search.
       </div>
     );
   }
-  // Coarse occupancy grid, centered on the entry origin.
   const cells = s.cells ?? [];
   const xs = cells.map((c) => c.x);
   const ys = cells.map((c) => c.y);
@@ -273,31 +447,35 @@ export function SearchPanel({ state }: { state: SystemState }) {
   const maxY = Math.max(4, ...ys);
   const cols = maxX - minX + 1;
   const rows = maxY - minY + 1;
-  const px = Math.min(10, Math.floor(180 / Math.max(cols, rows)));
+  const px = Math.min(12, Math.floor(190 / Math.max(cols, rows)));
 
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex items-start gap-4">
       <svg width={cols * px} height={rows * px} className="shrink-0">
         {cells.map((c, i) => (
           <rect
             key={i}
             x={(c.x - minX) * px}
             y={(maxY - c.y) * px}
-            width={px - 1}
-            height={px - 1}
-            fill={c.level === 2 ? "#4ade80" : "#facc15"}
-            opacity={c.level === 2 ? 0.8 : 0.5}
+            width={px - 1.5}
+            height={px - 1.5}
+            rx={2}
+            fill={c.level === 2 ? COLOR.victim : COLOR.warn}
+            opacity={c.level === 2 ? 0.75 : 0.4}
           />
         ))}
       </svg>
-      <div className="text-xs space-y-1">
-        <div className="text-ok font-bold">{s.coverage_pct}% EXPLORED</div>
-        <div className="text-dim">{s.explored_cells} cells cleared</div>
-        <div className="text-warn">{s.needs_pass} cells need another pass</div>
-        <div className="text-dim mt-2">
-          <span className="inline-block w-2 h-2 bg-ok mr-1" />explored{" "}
-          <span className="inline-block w-2 h-2 bg-warn ml-2 mr-1" />partial
+      <div className="space-y-2">
+        <div className="text-[22px] font-semibold num" style={{ color: COLOR.nav }}>
+          {Math.round(s.coverage_pct)}%
         </div>
+        <div className="cap">EXPLORED</div>
+        <div className="text-[12.5px] text-dim">{s.explored_cells} cells cleared</div>
+        {s.needs_pass > 0 && (
+          <div className="text-[12.5px]" style={{ color: COLOR.warn }}>
+            {s.needs_pass} cells need another pass
+          </div>
+        )}
       </div>
     </div>
   );
@@ -342,7 +520,6 @@ export function MissionReplayPanel() {
       .catch(() => setEvents([]));
   }, [selected]);
 
-  // Step-by-step playback (Training Mode): advance one event per tick.
   useEffect(() => {
     if (!playing || events.length === 0) return;
     const t = setInterval(() => {
@@ -359,44 +536,38 @@ export function MissionReplayPanel() {
 
   const t0 = events[0]?.ts ?? 0;
   const cur = events[idx];
-  const window = useMemo(
-    () => events.slice(Math.max(0, idx - 6), idx + 1),
-    [events, idx]
-  );
+  const window = useMemo(() => events.slice(Math.max(0, idx - 6), idx + 1), [events, idx]);
 
   return (
-    <div className="text-xs flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2 flex-wrap">
         <select
-          className="min-h-[36px] px-2 rounded-lg border border-edge bg-ink text-bright"
+          className="btn btn-sm max-w-[13rem]"
           value={selected ?? ""}
           onChange={(e) => setSelected(e.target.value)}
         >
           {sessions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.id} ({s.events} ev)
+            <option key={s.id} value={s.id} className="bg-panelSolid">
+              {s.id} ({s.events})
             </option>
           ))}
           {sessions.length === 0 && <option>no recordings</option>}
         </select>
-        <button className="btn text-xs" onClick={() => setPlaying((p) => !p)}>
-          {playing ? "PAUSE" : "PLAY"}
+        <button className="btn btn-sm" onClick={() => setPlaying((p) => !p)}>
+          {playing ? "❚❚ PAUSE" : "▶ PLAY"}
+        </button>
+        <button className="btn btn-sm" onClick={() => setIdx((i) => Math.max(0, i - 1))}>
+          ◂
         </button>
         <button
-          className="btn text-xs"
-          onClick={() => setIdx((i) => Math.max(0, i - 1))}
-        >
-          ◂ STEP
-        </button>
-        <button
-          className="btn text-xs"
+          className="btn btn-sm"
           onClick={() => setIdx((i) => Math.min(events.length - 1, i + 1))}
         >
-          STEP ▸
+          ▸
         </button>
       </div>
 
-      {events.length > 0 && (
+      {events.length > 0 ? (
         <>
           <input
             type="range"
@@ -404,35 +575,32 @@ export function MissionReplayPanel() {
             max={events.length - 1}
             value={idx}
             onChange={(e) => setIdx(Number(e.target.value))}
-            className="w-full accent-accent"
+            className="w-full accent-[#22d3ee]"
           />
-          <div className="text-dim">
-            EVENT {idx + 1}/{events.length} · T+
-            {cur ? Math.round(cur.ts - t0) : 0}s
+          <div className="cap">
+            EVENT {idx + 1}/{events.length} · T+{cur ? Math.round(cur.ts - t0) : 0}S
           </div>
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {window.map((e, i) => (
               <li
                 key={i}
-                className={`flex gap-2 ${
+                className={`flex gap-2.5 text-[12px] ${
                   i === window.length - 1 ? "text-bright" : "text-dim"
                 }`}
               >
-                <span className={severityColor[e.severity ?? "info"]}>
-                  {e.kind.toUpperCase()}
+                <span
+                  className="uppercase text-[10px] tracking-wide2 w-[4.5rem] shrink-0"
+                  style={{ color: SEV_COLOR[e.severity ?? "info"] ?? COLOR.unknown }}
+                >
+                  {e.kind}
                 </span>
-                <span className="truncate">
-                  {e.text ?? e.display ?? JSON.stringify(e).slice(0, 40)}
-                </span>
+                <span className="truncate">{e.text ?? e.display ?? ""}</span>
               </li>
             ))}
           </ul>
         </>
-      )}
-      {events.length === 0 && (
-        <div className="text-dim">
-          No recorded mission selected. Recordings appear here after a session.
-        </div>
+      ) : (
+        <div className="cap">NO RECORDED MISSION SELECTED</div>
       )}
     </div>
   );

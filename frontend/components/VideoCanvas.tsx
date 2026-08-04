@@ -1,130 +1,46 @@
 "use client";
 
-// Live video surface + SVG detection overlay. The SVG shares the frame's
-// pixel coordinate system via viewBox, so boxes track the video perfectly
-// at any display size.
+// Live feed surface + perception overlays.
+//
+// The <img> is the MJPEG-ish frame stream; everything drawn on top shares the
+// frame's pixel coordinate system through the SVG viewBox, so overlays track
+// the image exactly at any display size. Track geometry is conditioned by
+// useSmoothTracks before it reaches the screen — see that module for why.
 
 import { useVideoFeed } from "@/lib/useVideoFeed";
-import { SystemState, Track } from "@/lib/types";
-
-// Deuteranopia-safe palette (avoids red/green confusion) keyed by category —
-// used when the colorblind pref is on. Blue/orange/yellow are distinguishable
-// across the common CVD types.
-const CB_PALETTE: Record<string, string> = {
-  person: "#4da3ff", // blue
-  egress: "#ffd60a", // yellow
-  hazard: "#ff7b00", // orange
-  structure: "#c0c0c0",
-};
-
-function trackColor(t: Track, colorblind: boolean): string {
-  if (colorblind) return CB_PALETTE[t.category] ?? t.color;
-  return t.color;
-}
-
-function bracketPath(x1: number, y1: number, x2: number, y2: number): string {
-  const arm = Math.max(6, Math.min(x2 - x1, y2 - y1) * 0.25);
-  return [
-    `M ${x1} ${y1 + arm} L ${x1} ${y1} L ${x1 + arm} ${y1}`,
-    `M ${x2 - arm} ${y1} L ${x2} ${y1} L ${x2} ${y1 + arm}`,
-    `M ${x2} ${y2 - arm} L ${x2} ${y2} L ${x2 - arm} ${y2}`,
-    `M ${x1 + arm} ${y2} L ${x1} ${y2} L ${x1} ${y2 - arm}`,
-  ].join(" ");
-}
-
-function TrackBox({
-  t,
-  highlight,
-  showLabels,
-  colorblind,
-}: {
-  t: Track;
-  highlight: boolean;
-  showLabels: boolean;
-  colorblind: boolean;
-}) {
-  const [x1, y1, x2, y2] = t.box;
-  const possible = t.tier === "possible";
-  const stroke = trackColor(t, colorblind);
-  const label = `${t.display} ${Math.round(t.conf * 100)}%`;
-  const sub = [
-    t.dist_ft != null ? `${Math.round(t.dist_ft)} FT` : null,
-    t.max_temp_c != null ? `${Math.round(t.max_temp_c)}°C` : null,
-    t.thermal_confirmed ? "THERM✓" : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  return (
-    <g opacity={t.coasting ? 0.55 : 1}>
-      <path
-        d={bracketPath(x1, y1, x2, y2)}
-        stroke={stroke}
-        strokeWidth={highlight ? 4 : 2.5}
-        strokeDasharray={possible ? "6 5" : undefined}
-        fill="none"
-      />
-      {!showLabels && null}
-      {showLabels && (
-      <>
-      <rect
-        x={x1}
-        y={Math.max(0, y1 - 20)}
-        width={label.length * 8.4 + 8}
-        height={18}
-        fill={possible ? "#111827" : stroke}
-        opacity={0.92}
-      />
-      <text
-        x={x1 + 4}
-        y={Math.max(12, y1 - 6)}
-        fontSize={13}
-        fontFamily="ui-monospace, Menlo, monospace"
-        fontWeight={700}
-        fill={possible ? stroke : "#04070a"}
-      >
-        {label}
-      </text>
-      {sub && (
-        <text
-          x={x1 + 2}
-          y={y2 + 16}
-          fontSize={12}
-          fontFamily="ui-monospace, Menlo, monospace"
-          fill={stroke}
-        >
-          {sub}
-        </text>
-      )}
-      </>
-      )}
-    </g>
-  );
-}
+import { useSmoothTracks } from "@/lib/useSmoothTracks";
+import { SystemState } from "@/lib/types";
+import { MissionMode } from "@/lib/design";
+import DetectionLayer from "@/components/hud/DetectionLayer";
+import ThermalOverlay from "@/components/hud/ThermalOverlay";
 
 export default function VideoCanvas({
   feed,
   state,
   showOverlay = true,
+  showThermal = true,
+  mode = "SEARCH",
+  insetTop = 0,
+  insetBottom = 0,
+  reserved = [],
   className = "",
 }: {
   feed: "rgb" | "thermal" | "fused";
   state: SystemState | null;
   showOverlay?: boolean;
+  showThermal?: boolean;
+  mode?: MissionMode;
+  /** Fraction of frame height reserved for HUD chrome, so labels avoid it. */
+  insetTop?: number;
+  insetBottom?: number;
+  /** Card regions as [x1,y1,x2,y2] fractions of the frame; labels route around. */
+  reserved?: [number, number, number, number][];
   className?: string;
 }) {
   const src = useVideoFeed(feed);
+  const tracks = useSmoothTracks(showOverlay ? state : null);
   const fw = state?.frame.w ?? 640;
   const fh = state?.frame.h ?? 480;
-  const highlightDoors = state?.prefs.highlight_doors ?? false;
-  const showLabels = state?.prefs.show_labels ?? true;
-  const colorblind = state?.prefs.colorblind ?? false;
-  const emergency = state?.emergency ?? false;
-  // Emergency mode reduces clutter: only people, egress, and hazards remain.
-  const visibleTracks =
-    state && emergency
-      ? state.tracks.filter((t) => t.category !== "structure")
-      : state?.tracks ?? [];
 
   return (
     <div
@@ -140,29 +56,34 @@ export default function VideoCanvas({
           draggable={false}
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-dim text-sm tracking-widest">
-          AWAITING {feed.toUpperCase()} FEED…
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="cap animate-breathe">AWAITING {feed.toUpperCase()} FEED</span>
         </div>
       )}
-      {showOverlay && state && (
-        <svg
-          viewBox={`0 0 ${fw} ${fh}`}
-          preserveAspectRatio="none"
-          className="absolute inset-0 w-full h-full pointer-events-none"
-        >
-          {visibleTracks.map((t) => (
-            <TrackBox
-              key={t.id}
-              t={t}
-              highlight={
-                (highlightDoors || emergency) &&
-                (t.cls === "door" || t.cls === "exit_sign")
-              }
-              showLabels={showLabels}
-              colorblind={colorblind}
-            />
-          ))}
-        </svg>
+
+      {/* Thermal contours sit under the detection graphics: heat is context,
+          detections are the decision layer. Skipped on the thermal feed
+          itself, which is already a heat image. */}
+      {state && showThermal && feed !== "thermal" && (
+        <ThermalOverlay state={state} opacity={0.95} showLabels={mode !== "EVAC"} />
+      )}
+
+      {state && showOverlay && (
+        <DetectionLayer
+          tracks={tracks}
+          fw={fw}
+          fh={fh}
+          mode={mode}
+          smoke={state.smoke?.density ?? 0}
+          colorblind={state.prefs.colorblind}
+          showLabels={state.prefs.show_labels}
+          emphasizeDoors={state.prefs.highlight_doors}
+          safeTop={fh * insetTop}
+          safeBottom={fh * insetBottom}
+          reserved={reserved.map(
+            (r) => [r[0] * fw, r[1] * fh, r[2] * fw, r[3] * fh] as [number, number, number, number]
+          )}
+        />
       )}
     </div>
   );

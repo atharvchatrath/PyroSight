@@ -95,7 +95,7 @@ export default function CommandBar({
           {listening ? "● LISTENING" : "VOICE"}
         </button>
         <input
-          className="flex-1 min-h-[48px] px-3 rounded-lg border border-edge bg-ink text-bright placeholder-dim transition-colors focus:outline-none focus:ring-2 focus:ring-accent/70 focus:border-accent/50"
+          className="flex-1 min-h-[48px] px-4 border border-edge bg-ink text-bright placeholder-dim focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-200 ease-hud"
           placeholder='Type a command… e.g. "find exit"'
           value={text}
           onChange={(e) => setText(e.target.value)}

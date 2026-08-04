@@ -58,6 +58,8 @@ export interface Diagnostics {
   disk_percent: number | null;
   cpu_temp_c: number | null;
   battery_percent: number | null;
+  /** How the percentage was obtained — see core/diagnostics.py. */
+  battery_source?: "gauge" | "counted" | "host" | "simulated" | "none";
   runtime_min: number | null;
   power_state: "normal" | "saver" | "critical" | "unknown";
   fps: number;

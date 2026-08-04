@@ -67,6 +67,42 @@ def test_static_orange_capped_possible():
             "static orange must stay in the possible tier"
 
 
+def test_warm_lit_face_with_nose_highlight_not_fire():
+    """The field failure this gate exists for.
+
+    A face under warm indoor light sits inside the flame hue band, and the
+    specular highlight on the nose is a blown-out, low-saturation blob
+    directly inside that colored region — structurally identical to a flame
+    core inside a flame ring. Reported live as "there is a fire on my nose".
+    """
+    det = FireDetector()
+    results = []
+    for i in range(8):
+        frame = _room(90)
+        # Warm-lit skin: hue ~11, saturation just inside the orange band.
+        cv2.ellipse(frame, (320 + (i % 3), 220), (70, 95), 0, 0, 360,
+                    (100, 150, 230), -1)
+        # Nose highlight: V 255, near-zero saturation, adjacent to the ring.
+        cv2.ellipse(frame, (320 + (i % 3), 235), (8, 11), 0, 0, 360,
+                    (250, 252, 255), -1)
+        results = det.detect(frame)
+    assert results == [], f"a face with a nose highlight is not fire: {results}"
+
+
+def test_flame_in_front_of_a_person_still_detected():
+    """Skin rejection must not blind the detector in the case that matters:
+    a flame burning in the same frame as a person."""
+    det = FireDetector()
+    results = []
+    for i in range(8):
+        frame = _room(90)
+        cv2.ellipse(frame, (200, 220), (70, 95), 0, 0, 360, (100, 150, 230), -1)
+        _draw_lighter_flame(frame, 460, 240, jitter=(i % 3) - 1)
+        results = det.detect(frame)
+    assert any(abs((r["box"][0] + r["box"][2]) / 2 - 460) < 30 for r in results), \
+        f"flame beside a person must still be found: {results}"
+
+
 def test_white_lamp_alone_not_fire():
     det = FireDetector()
     results = []

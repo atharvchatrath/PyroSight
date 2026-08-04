@@ -49,14 +49,41 @@ driver returns *no range* rather than a confident wrong number.
 - **BNO085** → I²C (3V3, SDA=GPIO2, SCL=GPIO3, 400 kHz). The installer
   enables I²C automatically.
 - **ESP32** → USB serial @115200. The backend auto-detects common USB-UART
-  bridges (CP210x/CH340) or honor `PYROSIGHT_ESP32_PORT`. Protocol: one JSON
-  line per event —
+  bridges (CP210x/CH340) or honors `PYROSIGHT_ESP32_PORT`. The link is
+  **bidirectional**, one JSON line per message.
+
+  Pi → ESP32:
   `{"kind":"alert","severity":"critical|warning|info"}` and periodic
   `{"kind":"heartbeat"}`. Firmware maps severity → LED color, buzzer
   pattern, haptic pulse; loss of heartbeat >5 s should flash "system down".
+
+  ESP32 → Pi (all optional, consumed if present):
+  `{"kind":"battery","percent":63}` from a fuel-gauge IC, or
+  `{"kind":"battery","volts":5.03,"amps":1.82}` from an INA219 shunt on the
+  5 V rail, and `{"kind":"button","id":"ack"}` for glove-friendly input.
 - **Micro-OLED** → micro-HDMI; set the panel's native mode in
   `/boot/firmware/config.txt`. The `pyrosight-hud` kiosk service fills it.
+  Two settings matter on a 0.39" panel, both with working defaults:
+  `PYROSIGHT_HUD_SCALE` (default 1.75) scales the whole UI — desktop density
+  at 1920×1080 across 10 mm is unreadable in the helmet even though it looks
+  correct over VNC — and `PYROSIGHT_RGB_WIDTH/HEIGHT` should match the
+  panel's aspect (e.g. 1280×720 for 16:9), because the eyebox follows the
+  camera's aspect rather than a fixed 4:3 box.
 - **Microphone** (offline voice) → small USB mic; Vosk uses default ALSA in.
+
+### Battery state on a pack with no gauge
+
+A USB-C PD power bank reports nothing to the Pi — `psutil.sensors_battery()`
+returns `None` on Pi OS — so without help the platform cannot answer "how
+long have I got". The ESP32 is the fix, and the HUD always labels which
+answer it is showing:
+
+| Source | Shown as | Meaning |
+|---|---|---|
+| `gauge` | `63%` | Fuel-gauge IC state of charge — measured |
+| `counted` | `≈63%` | Coulomb-counted from the shunt against `PYROSIGHT_PACK_MAH` (default 20000, derated ×0.8 for boost-converter loss). Assumes full at boot and drifts; any gauge reading re-zeroes it |
+| `host` | `63%` | A development laptop's own battery |
+| `none` | `NO GAUGE` | Default build with no pack telemetry. The HUD says so rather than showing a dash that reads as "fine", and the low-battery alarm stays silent instead of firing on a guess |
 
 ## Performance envelope (Pi 5)
 
