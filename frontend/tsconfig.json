@@ -18,6 +18,14 @@
     "plugins": [{ "name": "next" }],
     "paths": { "@/*": ["./*"] }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  // .next-build is the alternate output dir used when building while a dev
+  // server holds .next — see NEXT_DIST_DIR in next.config.mjs.
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next-build/types/**/*.ts"
+  ],
   "exclude": ["node_modules"]
 }

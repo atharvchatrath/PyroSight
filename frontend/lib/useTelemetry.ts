@@ -64,12 +64,5 @@ export function useTelemetry() {
     };
   }, []);
 
-  const sendCommand = useCallback((text: string) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "command", text }));
-    }
-  }, []);
-
-  return { state, events, connected, sendCommand };
+  return { state, events, connected };
 }

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import classes
 from .thermal_analysis import ThermalAnalyzer
 
 PERSON_CLASSES = ("person", "firefighter")
@@ -110,7 +111,13 @@ def fuse(detections: List[Dict[str, Any]],
         elif cls == "fire":
             if det.get("source") == "hsv":
                 continue  # color alone never creates fire
-            if det["conf"] < NEURAL_FIRE_FLOOR:
+            # Fire carries an extra floor above its class threshold. It gets
+            # the same hysteresis as everything else, or a flame at the edge
+            # of the frame strobes: the tracker cannot sustain a fire track it
+            # never receives, whatever its own rules say.
+            floor = (NEURAL_FIRE_FLOOR * classes.KEEP_RATIO
+                     if det.get("weak") else NEURAL_FIRE_FLOOR)
+            if det["conf"] < floor:
                 continue  # weak neural guess: drop
             if thermal_independent:
                 for i, (hb, spot) in enumerate(hotspot_boxes_rgb):

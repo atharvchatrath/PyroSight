@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useTelemetry } from "@/lib/useTelemetry";
 import { SystemState } from "@/lib/types";
+import Wordmark from "@/components/Wordmark";
 
 interface Step {
   id: string;
@@ -124,10 +125,8 @@ export default function CalibratePage() {
   return (
     <main className="min-h-screen p-6 flex flex-col gap-6 max-w-3xl mx-auto">
       <header className="flex items-center gap-4">
-        <Link href="/" className="text-xl font-bold tracking-[0.3em] text-bright">
-          PYRO<span className="text-danger">SIGHT</span>
-        </Link>
-        <span className="text-dim text-xs tracking-widest">CALIBRATION WIZARD</span>
+        <Wordmark size="md" />
+        <span className="cap">Calibration wizard</span>
         <Link href="/dashboard" className="btn text-xs ml-auto">
           DASHBOARD →
         </Link>

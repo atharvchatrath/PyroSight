@@ -88,11 +88,11 @@ export function deriveAlerts(state: SystemState): DerivedAlert[] {
     out.push({ rule: "visibility", text: "VISIBILITY NEAR ZERO", rank: 50, severity: "warning" });
   }
 
-  const victim = state.tracks.find((t) => t.cls === "person" && t.conf >= 0.75 && !t.coasting);
+  const victim = state.tracks.find((t) => t.cls === "person" && t.conf >= 0.75 && !t.stale);
   if (victim) {
     out.push({
       rule: "person",
-      text: `PERSON DETECTED — ${Math.round(victim.conf * 100)}%${
+      text: `HUMAN DETECTED — ${Math.round(victim.conf * 100)}%${
         victim.dist_ft != null ? ` · ${Math.round(victim.dist_ft)} FT` : ""
       }`,
       rank: 70,
@@ -121,9 +121,9 @@ export function deriveAlerts(state: SystemState): DerivedAlert[] {
 }
 
 const TONE: Record<DerivedAlert["severity"], { fg: string; bg: string }> = {
-  critical: { fg: COLOR.critical, bg: "rgba(248,113,113,0.14)" },
-  warning: { fg: COLOR.warn, bg: "rgba(251,191,36,0.12)" },
-  info: { fg: COLOR.nav, bg: "rgba(34,211,238,0.10)" },
+  critical: { fg: COLOR.critical, bg: "rgba(255,59,15,0.16)" },
+  warning: { fg: COLOR.warn, bg: "rgba(255,171,46,0.13)" },
+  info: { fg: COLOR.nav, bg: "rgba(255,138,31,0.11)" },
 };
 
 export default function CriticalAlert({ state }: { state: SystemState }) {

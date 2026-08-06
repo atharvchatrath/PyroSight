@@ -9,7 +9,6 @@
 import Link from "next/link";
 import VideoCanvas from "@/components/VideoCanvas";
 import MiniMap from "@/components/hud/MiniMap";
-import CommandBar from "@/components/dashboard/CommandBar";
 import AssistantStack from "@/components/hud/AssistantStack";
 import {
   AlertsPanel,
@@ -23,26 +22,29 @@ import {
   SensorPanel,
   TrackList,
 } from "@/components/dashboard/Panels";
-import { MODE_META } from "@/lib/design";
+import { MODE_META, detectorLabel } from "@/lib/design";
 import { missionClock } from "@/lib/format";
 import { useMissionMode } from "@/lib/useMissionMode";
 import { useTelemetry } from "@/lib/useTelemetry";
+import Wordmark from "@/components/Wordmark";
 
 export default function DashboardPage() {
-  const { state, events, connected, sendCommand } = useTelemetry();
+  const { state, events, connected } = useTelemetry();
   const { mode, training, setTraining } = useMissionMode(state);
   const meta = MODE_META[mode];
 
   return (
     <main className="min-h-screen p-4 flex flex-col gap-4">
-      <header className="panel flex items-center gap-4 flex-wrap px-4 py-3">
-        <Link href="/" className="text-[17px] font-semibold tracking-wide2 text-bright">
-          PYRO<span className="text-danger">SIGHT</span>
-        </Link>
-        <span className="cap">COMMAND DASHBOARD</span>
+      {/* One row that degrades by DROPPING detail, not by wrapping. A header
+          that reflows to a second line shoves the whole grid down and the
+          mission clock lands in a different place on every screen — the one
+          element an incident commander looks for without reading. */}
+      <header className="panel flex items-center gap-3 xl:gap-4 px-4 py-3 overflow-hidden">
+        <Wordmark size="md" />
+        <span className="cap hidden lg:inline whitespace-nowrap">COMMAND DASHBOARD</span>
 
         <span
-          className="flex items-center gap-2 border px-3 py-1"
+          className="flex items-center gap-2 border px-3 py-1 shrink-0 whitespace-nowrap"
           style={{ borderColor: `${meta.color}66`, background: `${meta.color}12` }}
         >
           <span className="w-1.5 h-1.5" style={{ background: meta.color }} />
@@ -53,7 +55,7 @@ export default function DashboardPage() {
         </span>
 
         <span
-          className={`text-[11px] tracking-wide2 px-2.5 py-1 border ${
+          className={`text-[11px] tracking-wide2 px-2.5 py-1 border shrink-0 whitespace-nowrap ${
             connected ? "border-ok/60 text-ok" : "border-danger/70 text-danger animate-alarm"
           }`}
         >
@@ -62,19 +64,19 @@ export default function DashboardPage() {
 
         {state && (
           <>
-            <span className="cap">
-              {state.mode.toUpperCase()} · {state.detector.toUpperCase()} · {state.fps.toFixed(0)} FPS
+            <span className="cap hidden xl:inline whitespace-nowrap">
+              {state.mode.toUpperCase()} · {detectorLabel(state.detector)} · {state.fps.toFixed(0)} FPS
             </span>
-            <span className="ml-auto text-[19px] font-semibold text-bright num tracking-hud">
+            <span className="ml-auto shrink-0 text-[19px] font-semibold text-bright num tracking-hud">
               {missionClock(state.mission_time_s)}
             </span>
-            <button className="btn btn-sm" onClick={() => setTraining(!training)}>
+            <button className="btn btn-sm shrink-0 hidden md:inline-flex items-center" onClick={() => setTraining(!training)}>
               {training ? "TRAINING ON" : "TRAINING"}
             </button>
-            <Link href="/live" className="btn btn-sm">
+            <Link href="/live" className="btn btn-sm shrink-0 hidden sm:inline-flex items-center whitespace-nowrap">
               LIVE CAM →
             </Link>
-            <Link href="/hud" className="btn btn-sm">
+            <Link href="/hud" className="btn btn-sm shrink-0 inline-flex items-center whitespace-nowrap">
               HUD VIEW →
             </Link>
           </>
@@ -182,9 +184,6 @@ export default function DashboardPage() {
             </Panel>
           </div>
 
-          <Panel title="Voice / command interface">
-            <CommandBar onCommand={sendCommand} />
-          </Panel>
 
           {/* assistant cards mirror the helmet, bottom-right */}
           <div className="fixed bottom-5 right-5 z-30">

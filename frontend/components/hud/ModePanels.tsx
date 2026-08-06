@@ -98,7 +98,7 @@ export function FocusCard({ state }: { state: SystemState }) {
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 cap">
         <span>{victim.thermal_confirmed ? "BODY HEAT ✓" : "NO THERMAL MATCH"}</span>
         <span>TRACKED {victim.age.toFixed(0)}S</span>
-        {victim.coasting && <span style={{ color: COLOR.warn }}>THROUGH SMOKE</span>}
+        {victim.stale && <span style={{ color: COLOR.warn }}>THROUGH SMOKE</span>}
       </div>
     </div>
   );
@@ -116,7 +116,7 @@ export function CoverageChip({ state }: { state: SystemState }) {
   return (
     <div className="panel-float px-3 py-2 flex items-center gap-3 animate-riseIn">
       <svg width={38} height={38} className="shrink-0">
-        <circle cx={19} cy={19} r={R} fill="none" stroke="rgba(150,180,210,0.18)" strokeWidth={3} />
+        <circle cx={19} cy={19} r={R} fill="none" stroke="rgba(220,160,100,0.20)" strokeWidth={3} />
         <circle
           cx={19}
           cy={19}
@@ -130,7 +130,7 @@ export function CoverageChip({ state }: { state: SystemState }) {
           style={{ transition: "stroke-dasharray 600ms cubic-bezier(0.22,1,0.36,1)" }}
         />
         <text x={19} y={22.5} textAnchor="middle" fontSize={10.5} fontWeight={600}
-          fill="#e8f0f6" style={{ fontFamily: "var(--font-sans)" }}>
+          fill="#ffeedd" style={{ fontFamily: "var(--font-sans)" }}>
           {Math.round(pct)}
         </text>
       </svg>
@@ -170,7 +170,7 @@ export function TrainingPanel({ state }: { state: SystemState }) {
         : `${trend >= 0 ? "+" : ""}${trend.toFixed(1)} °C/MIN`,
       trend != null && trend > 8 ? COLOR.critical : undefined],
     ["COVERAGE", state.search?.active ? `${Math.round(state.search.coverage_pct)}%` : "INACTIVE"],
-    ["TRACKS", `${state.tracks.length} · ${state.tracks.filter((t) => t.coasting).length} COASTING`],
+    ["TRACKS", `${state.tracks.length} · ${state.tracks.filter((t) => t.stale).length} OCCLUDED`],
   ];
 
   return (
@@ -182,7 +182,7 @@ export function TrainingPanel({ state }: { state: SystemState }) {
         {rows.map(([k, v, c]) => (
           <div key={k} className="flex items-baseline justify-between gap-3">
             <span className="cap">{k}</span>
-            <span className="text-[12px] num tracking-hud" style={{ color: c ?? "#e8f0f6" }}>
+            <span className="text-[12px] num tracking-hud" style={{ color: c ?? "#ffeedd" }}>
               {v}
             </span>
           </div>

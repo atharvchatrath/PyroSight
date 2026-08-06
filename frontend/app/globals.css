@@ -13,8 +13,8 @@
 html,
 body {
   height: 100%;
-  background: #04070a;
-  color: #e8f0f6;
+  background: #0a0603;
+  color: #ffeedd;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   /* Numbers must never change width mid-mission: a distance jittering between
@@ -35,7 +35,7 @@ body {
      the world behind it is never fully lost. */
   .panel-float {
     @apply border border-edge;
-    background: rgba(6, 11, 17, 0.82);
+    background: rgba(12, 7, 3, 0.84);
   }
 
   .panel-title {
@@ -71,7 +71,7 @@ body {
   height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #1d2833;
+  background: #3d2412;
 }
 *::-webkit-scrollbar-track {
   background: transparent;

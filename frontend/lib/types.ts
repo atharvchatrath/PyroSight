@@ -8,7 +8,10 @@ export interface Track {
   priority: number;
   color: string;
   box: [number, number, number, number];
+  /** Belief that the class call is correct — the number the HUD prints. */
   conf: number;
+  /** The detector's own smoothed score. Diagnostics only; see tracker.py. */
+  raw_conf?: number;
   tier: "confirmed" | "likely" | "possible";
   thermal_confirmed: boolean;
   corroborated?: boolean;
@@ -16,19 +19,26 @@ export interface Track {
   severity: string | null;
   dist_ft: number | null;
   age: number;
+  /** Missed the last detector pass — drives motion extrapolation only. */
   coasting: boolean;
+  /** Genuinely unseen for several passes. This is the one the UI may say. */
+  stale?: boolean;
+  misses?: number;
   label_hint: string;
 }
 
 export interface NavTarget {
-  kind: "exit" | "victim" | "entry";
+  kind: "exit" | "victim" | "entry" | "hazard";
   cls: string;
   source: "live" | "memory" | "breadcrumbs";
   rel_bearing_deg: number;
   dist_ft: number | null;
   conf: number;
   age_s?: number;
+  /** Set by locate-objectives so the arrow names what was asked for. */
+  label?: string;
 }
+
 
 export interface NavState {
   objective: string;
@@ -87,6 +97,8 @@ export interface HudPrefs {
   emergency: boolean;
   power_saving: boolean;
   effective_brightness: number;
+  /** Anti-spoof disabled for bench testing — never set operationally. */
+  bench_mode?: boolean;
 }
 
 export interface Hotspot {
@@ -129,13 +141,9 @@ export interface SystemState {
 export interface TelemetryEvent {
   seq: number;
   ts: number;
-  kind: "alert" | "detection" | "command" | "system" | "assistant";
+  kind: "alert" | "detection" | "system" | "assistant";
   severity?: "critical" | "warning" | "info";
   text?: string;
-  ack?: string;
-  ok?: boolean;
-  transcript?: string;
-  intent?: string;
   rule?: string;
   track?: Partial<Track>;
 }

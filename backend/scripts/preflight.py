@@ -155,21 +155,6 @@ def check_imu() -> None:
            "Heading falls back to visual odometry (drifts).")
 
 
-def check_voice() -> None:
-    from pyrosight.voice.listener import VOSK_MODEL_DIR, VoskListener
-    if not VOSK_MODEL_DIR.exists():
-        record("Offline voice", WARN, "Vosk model not installed",
-               "Re-run deploy/install-pi.sh, or download vosk-model-small-en-us "
-               "to backend/models/vosk. Dashboard commands still work.")
-        return
-    listener = VoskListener(lambda _t: None)
-    if listener.available:
-        record("Offline voice", PASS, "Vosk model loaded")
-    else:
-        record("Offline voice", WARN, "model present but engine unavailable",
-               "pip install vosk sounddevice")
-
-
 def check_stereo() -> None:
     """Waveshare Dual IMX219: both CSI ports, plus whether it is calibrated.
 
@@ -311,7 +296,7 @@ def main() -> int:
     print("=" * 68)
     checks = [
         check_platform, check_python_deps, check_detector, check_rgb,
-        check_thermal, check_stereo, check_imu, check_voice,
+        check_thermal, check_stereo, check_imu,
         check_peripherals, check_hud_display, check_storage,
         check_thermals_and_power,
     ]

@@ -56,7 +56,7 @@ export function StatTile({
   label,
   value,
   sub,
-  color = "#e8f0f6",
+  color = "#ffeedd",
   fill,
 }: {
   label: string;
@@ -97,7 +97,7 @@ function TrackRow({ t }: { t: Track }) {
       />
       <span
         className="text-[13px] font-medium tracking-hud w-[11.5rem] truncate"
-        style={{ color: possible ? COLOR.unknown : "#e8f0f6" }}
+        style={{ color: possible ? COLOR.unknown : "#ffeedd" }}
       >
         {displayLabel(t)}
       </span>
@@ -117,7 +117,7 @@ function TrackRow({ t }: { t: Track }) {
         {t.max_temp_c != null ? `${Math.round(t.max_temp_c)}°C` : ""}
       </span>
       <span className="cap w-24 text-right truncate">
-        {t.thermal_confirmed ? "THERMAL ✓" : t.coasting ? "COASTING" : `${t.age.toFixed(0)}s`}
+        {t.thermal_confirmed ? "THERMAL ✓" : t.stale ? "OCCLUDED" : `${t.age.toFixed(0)}s`}
       </span>
     </li>
   );
@@ -210,7 +210,7 @@ export function EventTimeline({
               {e.kind}
             </span>
             <span className="text-[12.5px] text-bright/90 truncate">
-              {e.text ?? e.ack ?? e.transcript ?? ""}
+              {e.text ?? ""}
             </span>
           </li>
         );
@@ -315,7 +315,7 @@ const BATTERY_SOURCE_LABEL: Record<string, string> = {
 export function DiagnosticsPanel({ state }: { state: SystemState }) {
   const d = state.diagnostics;
   const pctColor = (v: number | null) =>
-    v == null ? COLOR.unknown : v > 88 ? COLOR.critical : v > 70 ? COLOR.warn : "#e8f0f6";
+    v == null ? COLOR.unknown : v > 88 ? COLOR.critical : v > 70 ? COLOR.warn : "#ffeedd";
 
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -575,7 +575,7 @@ export function MissionReplayPanel() {
             max={events.length - 1}
             value={idx}
             onChange={(e) => setIdx(Number(e.target.value))}
-            className="w-full accent-[#22d3ee]"
+            className="w-full accent-[#ff7a18]"
           />
           <div className="cap">
             EVENT {idx + 1}/{events.length} · T+{cur ? Math.round(cur.ts - t0) : 0}S

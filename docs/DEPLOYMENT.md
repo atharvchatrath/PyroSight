@@ -46,9 +46,9 @@ sudo bash deploy/install-pi.sh
 The installer, in order: installs OS packages (including whichever Chromium
 package the release provides) → creates the `pyrosight` service user →
 rsyncs to `/opt/pyrosight` → builds the venv against the apt-installed
-Picamera2/OpenCV → installs BNO085, Vosk and ESP32 extras → exports the
-full-vocabulary ONNX detector → downloads the offline voice model → builds
-the frontend → enables I²C → installs and starts three systemd units →
+Picamera2/OpenCV → installs BNO085 and ESP32 extras → exports the
+full-vocabulary ONNX detector → builds the frontend → enables I²C →
+installs and starts three systemd units →
 **verifies the services actually answer** and exits non-zero if not.
 
 | Unit | Purpose |
@@ -72,25 +72,10 @@ sudo -u pyrosight /opt/pyrosight/.venv/bin/python \
     /opt/pyrosight/backend/scripts/preflight.py
 ```
 
-Checks the detector, RGB camera, Lepton, IMU, voice model, ESP32 alert
+Checks the detector, RGB camera, Lepton, IMU, ESP32 alert
 channel, storage headroom, CPU temperature and battery — printing the exact
 remediation for anything not ready, and exiting non-zero on hard failures.
 Run it after install and as the pre-shift check.
-
-### Mission demonstration
-
-```bash
-/opt/pyrosight/.venv/bin/python /opt/pyrosight/scripts/demo-mission.py
-```
-
-Drives the platform through a full incident (size-up → primary search →
-victim location → hazard encounter → emergency egress → return-to-entry →
-after-action record) using the real command API and live telemetry. Useful
-for acceptance testing, training, and demonstrations.
-
-**Voice**: with the Vosk model installed the backend listens on the default
-microphone, fully offline, constrained to the command vocabulary for noise
-robustness. Without it, voice still works through the dashboard.
 
 **Custom detection model**: the installer bakes the PyroSight vocabulary
 (person, firefighter, door, exit sign, window, stairs, hallway, fire) into a
@@ -106,7 +91,6 @@ python backend/scripts/export_onnx.py --model your-model.pt --imgsz 320
 - [ ] `systemctl status pyrosight-backend` — active, FPS ≥ 15 in dashboard
 - [ ] Thermal: sensor panel shows `thermal ok (PureThermal UVC …)`, not "estimated"
 - [ ] IMU: compass tracks head rotation, `imu ok`
-- [ ] Voice: say "status" → command ack event appears
 - [ ] Battery: HUD BAT % present (USB-C PD pack reporting)
 - [ ] Incident recording: new session dir under `backend/data/incidents/`
 - [ ] HUD kiosk fills the OLED with no clipping (run the Calibration Wizard)

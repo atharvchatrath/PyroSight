@@ -23,8 +23,20 @@ export interface RenderTrack extends Track {
   rbox: [number, number, number, number];
   /** Smoothed confidence (display only; never inflates the raw value). */
   rconf: number;
-  /** 0..1 fade — appearance ramp, coasting dip, disappearance ramp. */
+  /** 0..1 fade for the MARK — appearance ramp, occlusion dip, exit ramp. */
   alpha: number;
+  /**
+   * 0..1 fade for the LABEL, floored while the track is still held.
+   *
+   * The mark and its text want opposite things when a detection goes
+   * occluded. Fading the brackets is right — it says "I am predicting where
+   * this is, not seeing it". Fading the words to match is not: it renders
+   * "HUMAN 96% · 19 FT" at half strength over a smoke-grey feed, which is the
+   * one label a firefighter most needs to read, greyed out at the exact
+   * moment the camera lost sight of the person. The sub-line already says
+   * OCCLUDED; the text does not also have to be hard to read.
+   */
+  labelAlpha: number;
   /** 0..1 tracker stability: age, continuity, freshness. */
   stability: number;
   /** Seconds since this track last had a telemetry update. */
@@ -126,8 +138,11 @@ export function useSmoothTracks(state: SystemState | null): RenderTrack[] {
       e.vy = e.vy * 0.72 + instVy * 0.28;
       e.lastUpdate = now;
       e.gone = false;
-      // Coasting tracks (occluded, kept alive by the tracker) sit back.
-      e.target = t.coasting ? 0.55 : 1;
+      // Genuinely occluded tracks sit back. Keyed on `stale`, not `coasting`:
+      // the detector runs every Nth frame, so coasting alternates on and off
+      // continuously — driving opacity from it dimmed every mark on the HUD
+      // to 55% half the time, which read as the whole display flickering.
+      e.target = t.stale ? 0.55 : 1;
     }
 
     for (const [id, e] of entries.current) {
@@ -168,10 +183,10 @@ export function useSmoothTracks(state: SystemState | null): RenderTrack[] {
 
         const staleness = (now - e.lastUpdate) / 1000;
         const ageS = e.track.age;
-        // Stability blends how long we've held the track, whether the tracker
-        // is coasting, and how fresh the last real observation is.
+        // Stability blends how long we've held the track, whether it is
+        // genuinely unseen, and how fresh the last real observation is.
         const stability = clamp(
-          Math.min(1, ageS / 12) * (e.track.coasting ? 0.55 : 1) *
+          Math.min(1, ageS / 12) * (e.track.stale ? 0.55 : 1) *
             (staleness > 0.5 ? 0.6 : 1),
           0,
           1
@@ -182,6 +197,9 @@ export function useSmoothTracks(state: SystemState | null): RenderTrack[] {
           rbox: [cx - hw, cy - hh, cx + hw, cy + hh],
           rconf: e.sconf,
           alpha: e.alpha,
+          // Held tracks keep a legible label; only a track actually leaving
+          // the display fades its text, and then it fades all the way out.
+          labelAlpha: e.gone ? e.alpha : Math.max(e.alpha, 0.92),
           stability,
           staleness,
           vx: e.vx,

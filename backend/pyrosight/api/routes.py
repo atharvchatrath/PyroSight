@@ -3,18 +3,12 @@ these routes serve configuration, history, and one-shot queries."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
 from ..config import DATA_DIR
 from ..recording.incidents import IncidentRecorder
-from ..voice import commands as voice_grammar
-
-
-class CommandRequest(BaseModel):
-    text: str
 
 
 def build_router(engine, hub) -> APIRouter:
@@ -37,14 +31,6 @@ def build_router(engine, hub) -> APIRouter:
     @router.get("/config")
     def get_config() -> Dict[str, Any]:
         return engine.config.to_dict()
-
-    @router.get("/commands")
-    def list_commands():
-        return voice_grammar.available_commands()
-
-    @router.post("/command")
-    def post_command(req: CommandRequest) -> Dict[str, Any]:
-        return engine.submit_command(req.text)
 
     @router.get("/events")
     def recent_events(limit: int = 100):

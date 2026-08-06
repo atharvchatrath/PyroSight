@@ -15,13 +15,12 @@ Runs as a plain daemon thread (never starved by the asyncio event loop):
       -> alerts, recording
       -> publish: state snapshot + JPEG feeds (rgb / thermal / fused)
 
-Commands (voice or dashboard) arrive on a thread-safe queue and are applied
-at the top of the loop, so all mutation happens on one thread.
+The engine is autonomous: it has no command input. Everything it reports is
+derived from what the sensors see, on one thread.
 """
 
 from __future__ import annotations
 
-import queue
 import threading
 import time
 from typing import Any, Dict, List, Optional
@@ -41,18 +40,6 @@ from ..navigation.mesh import MeshLink, buddy_bearings
 from ..navigation.search import SearchCoverage
 from ..peripherals.esp32 import Esp32Peripherals
 
-# Helmet buttons -> voice intents. Any other id is taken as an intent name
-# directly ({"kind":"button","id":"FIND_EXIT"}), so firmware can drive the
-# whole grammar without a backend change.
-BUTTON_INTENTS = {
-    "ack": "EXIT_EMERGENCY",     # acknowledge / stand down the alarm
-    "mayday": "EMERGENCY_MODE",
-    "exit": "FIND_EXIT",
-    "entry": "RETURN_TO_ENTRY",
-    "mark": "MARK_ENTRY",
-    "thermal": "SHOW_THERMAL",
-    "repeat": "REPEAT_ALERT",
-}
 from ..recording.incidents import IncidentRecorder
 from ..sensors.imu import StaticIMU
 from ..sensors.manager import SensorSuite
@@ -70,8 +57,6 @@ from ..vision.smoke import SmokeEstimator
 from ..vision.thermal_analysis import ThermalAnalyzer
 from ..vision.tracker import TemporalTracker
 from ..vision.visual_odometry import VisualYaw
-from ..voice import commands as voice_grammar
-from ..voice.announcer import AudioAnnouncer
 from .worker import DetectionWorker
 
 
@@ -108,7 +93,6 @@ class PerceptionEngine:
         self.alerts = AlertEngine(config.physio)
         self.floor_analyzer = FloorIntegrityAnalyzer()
         self.mesh = MeshLink(config.mesh)
-        self.announcer = AudioAnnouncer(config.audio)
         # ESP32 alert channel (LEDs / buzzer / haptic) and pack telemetry:
         # silent no-op when no board is attached.
         self.peripherals = Esp32Peripherals()
@@ -117,7 +101,6 @@ class PerceptionEngine:
         self.diagnostics = Diagnostics(esp32=self.peripherals)
         self.recorder = IncidentRecorder(DATA_DIR, config.engine.record_incidents)
 
-        self._commands: "queue.Queue[Dict[str, Any]]" = queue.Queue()
         self._thread: Optional[threading.Thread] = None
         self._running = False
         # Browser-camera ingest: standing buffer + runtime live-switch flags.
@@ -134,18 +117,22 @@ class PerceptionEngine:
         self._det_event_ts: Dict[str, float] = {}  # class -> last event time
         self._cached_detections: List[Dict[str, Any]] = []
 
-        # HUD preferences mutated by voice/dashboard commands.
+        # HUD presentation defaults. Fixed for the run — nothing mutates them
+        # now that the platform takes no commands.
         self.prefs = {
             "primary_view": "fused",
             "highlight_doors": False,
             "show_labels": True,
             "brightness": 1.0,          # HUD gain, 0.6..1.5
             "colorblind": False,        # deuteranopia-safe palette
-            "emergency": False,         # emergency mode (auto or manual)
+            "emergency": False,         # raised automatically by conditions
             "power_saving": False,
+            # Anti-spoof disabled for bench testing. Published so the HUD can
+            # say so — a display that silently accepts a photograph of a
+            # person as a victim must never look identical to one that does
+            # not.
+            "bench_mode": config.vision.allow_screens,
         }
-        self._emergency_manual = False
-        self._emergency_suppress_until = 0.0
         self._search = SearchCoverage()
         self.assistant = SmartAssistant()
 
@@ -161,14 +148,6 @@ class PerceptionEngine:
             self._live_ingest_active = not self.sim_mode
         if self.worker is not None:
             self.worker.start()
-        self._voice_listener = None
-        if not self.sim_mode:
-            try:
-                from ..voice.listener import VoskListener
-                self._voice_listener = VoskListener(self.submit_command)
-                self._voice_listener.start()
-            except Exception:  # noqa: BLE001 - voice is optional
-                self._voice_listener = None
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True,
                                         name="pyrosight-engine")
@@ -190,8 +169,6 @@ class PerceptionEngine:
             self._thread.join(timeout=2.0)
         if self.worker is not None:
             self.worker.stop()
-        if getattr(self, "_voice_listener", None) is not None:
-            self._voice_listener.stop()
         self.peripherals.close()
         self.sensors.stop()
         self.mesh.stop()
@@ -199,22 +176,6 @@ class PerceptionEngine:
         self.recorder.close()
 
     # ------------------------------------------------------------------
-
-    def submit_command(self, text: str) -> Dict[str, Any]:
-        """Voice/typed command in, ack out (grammar runs synchronously; the
-        state change is applied on the engine thread)."""
-        result = voice_grammar.match(text)
-        if result is None:
-            ack = {"ok": False, "transcript": text,
-                   "ack": "UNRECOGNIZED — SAY 'STATUS' FOR OPTIONS"}
-            self.hub.push_event("command", {"severity": "info", **ack})
-            return ack
-        self._commands.put(result)
-        ack = {"ok": True, "intent": result["intent"], "ack": result["ack"],
-               "transcript": text}
-        self.hub.push_event("command", {"severity": "info", **ack})
-        self.recorder.log("command", ack)
-        return ack
 
     def _reject_framed_people(self, rgb: np.ndarray,
                               detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -269,25 +230,6 @@ class PerceptionEngine:
                 t["display"] = t["display"].replace("POSSIBLE ", "")
             t["label_hint"] = "no independent motion"
         self.static_subjects.forget(live_ids)
-
-    def _drain_hardware_buttons(self) -> None:
-        """Physical buttons on the ESP32 -> the same intents voice uses.
-
-        A gloved hand on a helmet switch has to reach the same code path as a
-        spoken command, or the two drift apart and the button becomes the
-        thing nobody trusts. Unknown ids are ignored rather than guessed at.
-        """
-        for pressed in self.peripherals.take_buttons():
-            intent = BUTTON_INTENTS.get(pressed.lower(), pressed.upper())
-            if intent not in voice_grammar.ACKS:
-                continue
-            self._commands.put({"intent": intent,
-                                "ack": voice_grammar.ACKS[intent],
-                                "transcript": f"[button:{pressed}]"})
-            self.hub.push_event("command", {
-                "severity": "info", "ok": True, "intent": intent,
-                "ack": voice_grammar.ACKS[intent],
-                "transcript": f"[button:{pressed}]"})
 
     def ingest_frame(self, jpeg: bytes) -> bool:
         """Browser camera ingest (/ws/ingest). Frames land in a standing
@@ -371,7 +313,12 @@ class PerceptionEngine:
         })
         self.recorder.log("live_revert", {"reason": "browser feed stalled"})
 
-    def _apply_commands(self) -> None:
+    def _service_camera_source(self) -> None:
+        """Runtime sim <-> live camera switching, on the engine thread.
+
+        Both transitions rebuild perception state, so they must not happen
+        underneath a tick that is mid-way through using it.
+        """
         if self._want_live_switch and not self._live_ingest_active:
             self._perform_live_switch()
         # Dead-feed failsafe: a browser camera that stops sending (tab
@@ -381,59 +328,6 @@ class PerceptionEngine:
         if (self._live_ingest_active
                 and time.time() - self._browser_rgb._last_read_ts > 8.0):
             self._revert_to_sim()
-        while True:
-            try:
-                cmd = self._commands.get_nowait()
-            except queue.Empty:
-                return
-            intent = cmd["intent"]
-            if intent == "FIND_EXIT":
-                self.guidance.set_objective("find_exit")
-                self._search.stop()
-            elif intent == "LOCATE_VICTIM":
-                self.guidance.set_objective("locate_victim")
-                self._search.stop()
-            elif intent == "RETURN_TO_ENTRY":
-                self.guidance.set_objective("return_to_entry")
-                self._search.stop()
-            elif intent == "CLEAR_OBJECTIVE":
-                self.guidance.set_objective("explore")
-                self._search.stop()
-            elif intent == "MARK_ENTRY":
-                self.breadcrumbs.mark_entry_here()
-            elif intent == "SHOW_THERMAL":
-                self.prefs["primary_view"] = "thermal"
-            elif intent == "SHOW_RGB":
-                self.prefs["primary_view"] = "rgb"
-            elif intent == "HIGHLIGHT_DOORS":
-                self.prefs["highlight_doors"] = not self.prefs["highlight_doors"]
-            elif intent == "HIDE_LABELS":
-                self.prefs["show_labels"] = False
-            elif intent == "SHOW_LABELS":
-                self.prefs["show_labels"] = True
-            elif intent == "BRIGHTNESS_UP":
-                self.prefs["brightness"] = round(
-                    min(1.5, self.prefs["brightness"] + 0.15), 2)
-            elif intent == "BRIGHTNESS_DOWN":
-                self.prefs["brightness"] = round(
-                    max(0.6, self.prefs["brightness"] - 0.15), 2)
-            elif intent == "EMERGENCY_MODE":
-                self._emergency_manual = True
-                self._emergency_suppress_until = 0.0
-            elif intent == "EXIT_EMERGENCY":
-                # A dismissal must actually stick. Without a suppression
-                # window the auto-trigger re-fires on the next frame and the
-                # operator cannot clear the banner — which teaches them to
-                # ignore it. Conditions can still re-escalate after the
-                # window, and a manual declaration overrides immediately.
-                self._emergency_manual = False
-                self._emergency_suppress_until = time.time() + 60.0
-            elif intent == "SEARCH_MODE":
-                self.guidance.set_objective("search")
-                self._search.start(self.breadcrumbs.position)
-            elif intent == "REPEAT_ALERT":
-                if self.alerts.latest is not None:
-                    self.hub.push_event("alert", dict(self.alerts.latest))
 
     # ------------------------------------------------------------------
 
@@ -442,8 +336,7 @@ class PerceptionEngine:
         last = time.time()
         while self._running:
             t0 = time.time()
-            self._drain_hardware_buttons()
-            self._apply_commands()
+            self._service_camera_source()
             try:
                 self._tick()
             except Exception as exc:  # noqa: BLE001 - engine must survive
@@ -525,7 +418,8 @@ class PerceptionEngine:
         # the alert engine, or the victim count. Sim ground truth is exempt —
         # there are no posters in the SITL world, and the test would only cost
         # frame time.
-        if not (self.sim_mode and self.sensors.rgb_is_sim):
+        if (not (self.sim_mode and self.sensors.rgb_is_sim)
+                and not cfg.vision.allow_screens):
             detections = self._reject_framed_people(rgb, detections)
 
         # ---- fusion + temporal tracking ----
@@ -606,18 +500,14 @@ class PerceptionEngine:
             or (diag.get("battery_percent") is not None
                 and diag["battery_percent"] < 12)
             or smoke_vis == "NEAR ZERO")
-        if time.time() < self._emergency_suppress_until:
-            auto_emergency = False   # operator dismissed; honour it
-        emergency = self._emergency_manual or auto_emergency
+        # Purely condition-driven: it raises itself when the conditions above
+        # hold and clears itself the moment they stop. With no command input
+        # there is no operator dismissal, so the specificity of that list is
+        # the ONLY thing standing between this and alarm fatigue.
+        emergency = auto_emergency
         self.prefs["emergency"] = emergency
         # Power-saving engages automatically on low battery.
         self.prefs["power_saving"] = diag.get("power_state") in ("saver", "critical")
-        # Audio-first fallback: a screen is useless in zero visibility, so
-        # guidance switches to spoken instructions instead of a HUD nobody
-        # can see.
-        audio_first_active = (smoke_vis == "NEAR ZERO") or emergency
-        self.prefs["audio_first_active"] = audio_first_active
-        self.announcer.update(audio_first_active, nav.get("instruction", ""), fired)
         # Effective brightness: emergency forces a high-visibility floor.
         eff_brightness = (max(self.prefs["brightness"], 1.35) if emergency
                           else self.prefs["brightness"])

@@ -26,7 +26,7 @@ const STORE_KEY = "pyrosight.training";
 
 function victimPresent(state: SystemState): boolean {
   return state.tracks.some(
-    (t) => t.cls === "person" && t.conf >= 0.7 && !t.coasting
+    (t) => t.cls === "person" && t.conf >= 0.7 && !t.stale
   );
 }
 

@@ -8,6 +8,12 @@ Objectives (set by voice command or dashboard):
   find_exit        — arrow to the best exit evidence (exit sign > door >
                      window > remembered last-seen position).
   locate_victim    — arrow to the strongest person track / last-seen spot.
+  locate_fire      — arrow to the nearest confirmed fire or hotspot. The one
+                     objective that points AT the hazard: sizing up where the
+                     seat of the fire is, is a thing crews are sent in to do.
+  locate_door      — arrow to the nearest door specifically.
+  locate_window    — arrow to the nearest window (secondary egress).
+  locate_stairs    — arrow to the nearest staircase.
   return_to_entry  — follow the breadcrumb trail backwards.
 
 Route safety: any confirmed fire/hotspot track inside the forward cone and
@@ -28,6 +34,17 @@ FEET_PER_METER = 3.28084
 RGB_FX_AT_640 = 522.0
 
 EXIT_PREFERENCE = {"exit_sign": 3, "door": 2, "window": 1}
+
+# Voice objectives that hunt one specific kind of thing:
+#   objective -> (classes it will accept, the NavTarget kind it reports)
+# Nearest wins within the set, because "locate the door" means the one the
+# operator can reach, not the one the detector likes best.
+LOCATE_TARGETS = {
+    "locate_fire": (("fire", "hotspot"), "hazard"),
+    "locate_door": (("door",), "exit"),
+    "locate_window": (("window",), "exit"),
+    "locate_stairs": (("stairs",), "exit"),
+}
 
 
 def _rel_bearing_from_box(box: List[float], frame_w: int) -> float:
@@ -63,6 +80,10 @@ class GuidanceEngine:
             target = self._target_entry(heading_deg, breadcrumbs)
         elif self.objective == "locate_victim":
             target = self._target_victim(tracks, heading_deg, frame_w)
+        elif self.objective in LOCATE_TARGETS:
+            classes, kind = LOCATE_TARGETS[self.objective]
+            target = self._target_nearest(tracks, heading_deg, frame_w,
+                                          classes, kind)
         elif self.objective == "find_exit":
             target = self._target_exit(tracks, heading_deg, frame_w)
         else:  # explore: passive exit awareness
@@ -161,6 +182,31 @@ class GuidanceEngine:
             return None
         return self._memory_target(self._last_exit, heading_deg, "exit")
 
+    def _target_nearest(self, tracks, heading_deg, frame_w,
+                        classes: Tuple[str, ...], kind: str
+                        ) -> Optional[Dict[str, Any]]:
+        """Nearest member of `classes`, ignoring POSSIBLE-tier evidence.
+
+        A direct "locate the fire" is a question, and the honest answer to it
+        is either a bearing or nothing. Pointing an arrow at a guess would be
+        worse than the blank the operator gets instead — they would walk it.
+        """
+        candidates = [t for t in tracks
+                      if t["cls"] in classes and t["tier"] != "possible"]
+        if not candidates:
+            return None
+        # Unranged tracks sort last: a bearing with no distance is still
+        # useful, but a known 12 ft beats an unknown every time.
+        best = min(candidates,
+                   key=lambda t: (t.get("dist_ft") is None,
+                                  t.get("dist_ft") or 0.0))
+        target = self._live_target(best, heading_deg, frame_w, kind)
+        # Answer in the operator's own words. They asked for a window; "EXIT:
+        # AHEAD LEFT" makes them re-derive which of the three exits on screen
+        # the arrow means.
+        target["label"] = best.get("display", "").replace("POSSIBLE ", "")
+        return target
+
     def _target_victim(self, tracks, heading_deg, frame_w) -> Optional[Dict[str, Any]]:
         victims = [t for t in tracks if t["cls"] == "person"]
         if victims:
@@ -221,7 +267,13 @@ class GuidanceEngine:
             return "SCANNING FOR EGRESS"
         rel = target["rel_bearing_deg"]
         dist = target.get("dist_ft")
-        name = {"exit": "EXIT", "victim": "VICTIM", "entry": "ENTRY"}[target["kind"]]
+        # A locate-objective target names itself (DOOR / WINDOW EXIT / FIRE);
+        # otherwise fall back on the kind. `.get` rather than `[]` so a new
+        # objective can never take the navigation panel down with a KeyError.
+        name = target.get("label") or {
+            "exit": "EXIT", "victim": "HUMAN", "entry": "ENTRY",
+            "hazard": "FIRE",
+        }.get(target["kind"], target["kind"].upper())
         mem = " (LAST SEEN)" if target.get("source") == "memory" else ""
         dist_txt = f" {int(dist)} FT" if dist else ""
         if abs(rel) <= 20:

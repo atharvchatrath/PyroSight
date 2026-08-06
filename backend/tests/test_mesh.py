@@ -1,6 +1,5 @@
 """Mesh position sharing (UDP broadcast) and buddy bearing math."""
 
-import math
 import pathlib
 import sys
 import time

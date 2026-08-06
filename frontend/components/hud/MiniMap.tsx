@@ -99,8 +99,8 @@ export default function MiniMap({
       <svg width={size} height={size}>
         <defs>
           <radialGradient id="ps-map-fade">
-            <stop offset="60%" stopColor="#22d3ee" stopOpacity="0.05" />
-            <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+            <stop offset="60%" stopColor="#ff7a18" stopOpacity="0.05" />
+            <stop offset="100%" stopColor="#ff7a18" stopOpacity="0" />
           </radialGradient>
         </defs>
         <circle cx={size / 2} cy={size / 2} r={R} fill="url(#ps-map-fade)" />
@@ -123,10 +123,10 @@ export default function MiniMap({
         })}
 
         {/* range rings */}
-        <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="rgba(150,180,210,0.18)" />
-        <circle cx={size / 2} cy={size / 2} r={R / 2} fill="none" stroke="rgba(150,180,210,0.12)" />
+        <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="rgba(220,160,100,0.20)" />
+        <circle cx={size / 2} cy={size / 2} r={R / 2} fill="none" stroke="rgba(220,160,100,0.13)" />
         <text x={size / 2} y={11} textAnchor="middle" fontSize="9" fontWeight={600}
-          letterSpacing="0.1em" fill="#8b9bab">
+          letterSpacing="0.1em" fill="#a8815e">
           N
         </text>
 
@@ -162,7 +162,7 @@ export default function MiniMap({
           </g>
         ))}
 
-        <polygon points={wedge} fill={COLOR.nav} stroke="#04070a" strokeWidth="0.8" />
+        <polygon points={wedge} fill={COLOR.nav} stroke="#0a0603" strokeWidth="0.8" />
       </svg>
       {/* Explicit separators, not just flex spacing: at 150 px the three
           fields sat shoulder to shoulder and read as one run-on string

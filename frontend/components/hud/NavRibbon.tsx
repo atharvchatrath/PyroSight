@@ -206,13 +206,13 @@ export default function NavRibbon({
       {!compact && (
         <g transform={`translate(${clamp(endX, 70, W - 70)} ${endY - 26})`}>
           <rect x={-64} y={-19} width={128} height={30}
-            fill="#050a10" fillOpacity={0.7} stroke={color} strokeOpacity={0.6} />
+            fill="#0d0704" fillOpacity={0.7} stroke={color} strokeOpacity={0.6} />
           <text x={0} y={2} textAnchor="middle" fontSize={16} fontWeight={700}
             letterSpacing="0.1em" fill={color}>
             {dist != null ? `${Math.round(dist)} FT` : turn}
           </text>
           <text x={0} y={26} textAnchor="middle" fontSize={10.5}
-            letterSpacing="0.16em" fill="#8b9bab">
+            letterSpacing="0.16em" fill="#a8815e">
             {[
               turn !== "AHEAD" ? `BEAR ${turn}` : "STRAIGHT AHEAD",
               target.source === "memory" ? "LAST KNOWN" : null,

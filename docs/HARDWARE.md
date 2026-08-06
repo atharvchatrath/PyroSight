@@ -69,7 +69,6 @@ driver returns *no range* rather than a confident wrong number.
   correct over VNC — and `PYROSIGHT_RGB_WIDTH/HEIGHT` should match the
   panel's aspect (e.g. 1280×720 for 16:9), because the eyebox follows the
   camera's aspect rather than a fixed 4:3 box.
-- **Microphone** (offline voice) → small USB mic; Vosk uses default ALSA in.
 
 ### Battery state on a pack with no gauge
 

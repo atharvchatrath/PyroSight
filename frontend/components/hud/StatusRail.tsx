@@ -101,7 +101,7 @@ function Item({
   return (
     <div className="flex items-center gap-1.5" title={label}>
       {icon}
-      <span className="text-[12px] num tracking-hud" style={{ color: color ?? "#e8f0f6" }}>
+      <span className="text-[12px] num tracking-hud" style={{ color: color ?? "#ffeedd" }}>
         {value}
       </span>
     </div>
@@ -135,7 +135,7 @@ export default function StatusRail({
 
   // Suppressed classes are excluded from the trust number as well — the rail
   // must describe what the operator can actually see on the display.
-  const tracked = state.tracks.filter((t) => !t.coasting && !isSuppressed(t));
+  const tracked = state.tracks.filter((t) => !t.stale && !isSuppressed(t));
   const avgConf =
     tracked.length > 0
       ? tracked.reduce((a, t) => a + t.conf, 0) / tracked.length
@@ -150,6 +150,19 @@ export default function StatusRail({
 
   return (
     <div className="panel-float flex items-center gap-4 px-3.5 py-2 text-dim">
+      {/* Loud on purpose. In bench mode the platform will call a person on a
+          screen a victim, and the one thing that must never happen is a
+          helmet reaching an incident in this state with nothing on the
+          display to say so. */}
+      {state.prefs.bench_mode && (
+        <span
+          className="px-2 py-0.5 text-[10px] font-semibold tracking-wide2 shrink-0 animate-alarm"
+          style={{ background: COLOR.critical, color: "#0a0603" }}
+          title="Anti-spoof disabled (PYROSIGHT_ALLOW_SCREENS) — not for operational use"
+        >
+          BENCH MODE
+        </span>
+      )}
       <Item
         icon={<BatteryIcon pct={battery ?? 0} color={batteryColor} />}
         // A USB-C PD pack has no gauge the Pi can read. Say so rather than

@@ -19,29 +19,46 @@ export type Role =
   | "unknown"
   | "system";
 
+// The warm ramp. Hue no longer separates ten classes on its own — LUMINANCE
+// does, and it is ordered by operational priority so the brightest thing on
+// the display is always the thing that matters most:
+//
+//   white   a human
+//   amber   a way out
+//   orange  something structural
+//   red     fire
+//   brown   we don't know
+//
+// That ordering survives a colourblind eye, a monochrome panel, and a visor
+// with soot on it, none of which a blue/green/red scheme does.
 export const COLOR: Record<Role, string> = {
-  nav: "#22d3ee", // safe navigation — light blue
-  victim: "#22d3ee", // civilians / victims — light blue
-  crew: "#facc15", // firefighters
-  door: "#4ade80",
-  exit: "#34d399",
-  warn: "#fbbf24", // warnings
-  heat: "#fb923c", // high heat
-  critical: "#f87171", // fire / critical danger
-  unknown: "#94a3b8", // unidentified or low confidence
-  system: "#e8f0f6", // system information
+  nav: "#ff8a1f", // safe navigation
+  victim: "#ffffff", // humans — brightest mark on the display, always
+  crew: "#ffd9a8", // firefighters
+  door: "#ff8a1f",
+  exit: "#ffc24b", // exit signs and windows
+  warn: "#ffab2e", // warnings
+  heat: "#ff6a00", // high heat
+  critical: "#ff3b0f", // fire / critical danger
+  unknown: "#9a7358", // unidentified or low confidence
+  system: "#ffeedd", // system information
 };
 
-export const CREW_ACCENT = "#facc15";
+export const CREW_ACCENT = "#ffd9a8";
 
-// Deuteranopia/protanopia-safe substitutions. Green↔red separation is the
-// failure case, so victims move to blue-cyan and hazards to amber-orange.
+// An all-warm palette removes the red↔green failure entirely, which is the
+// one that used to matter here. What replaces it is a subtler risk: to a
+// deuteranope, orange and red sit closer together than they do to a
+// trichromat. So the fix is no longer substitution — it is widening the
+// LUMINANCE gaps between neighbours in the ramp, which every kind of vision
+// can read.
 const CB_OVERRIDE: Partial<Record<Role, string>> = {
-  door: "#facc15", // egress moves off green…
-  exit: "#facc15",
-  crew: "#e8f0f6", // …and crew off yellow so the two stay separable
-  critical: "#fb923c",
-  heat: "#ffc255",
+  critical: "#ff2a00", // fire goes darker and more saturated…
+  heat: "#ffa64d", // …and heat goes much brighter, so the two separate
+  warn: "#ffd98a",
+  exit: "#fff0cc", // egress lifts toward white, well clear of door orange
+  door: "#ff7a00",
+  crew: "#d9c3ae", // crew drops below victim white so bodies stay distinct
 };
 
 const CLASS_ROLE: Record<string, Role> = {
@@ -83,7 +100,8 @@ export function colorOf(role: Role, colorblind = false): string {
 
 export type ConfBand = "high" | "good" | "fair" | "low";
 
-/** 100–95 green · 94–85 cyan · 84–70 yellow · <70 gray + "POSSIBLE". */
+/** Brighter is more certain: 100–95 cream · 94–85 amber · 84–70 orange ·
+ *  <70 muted + "POSSIBLE". The ramp is a dimmer, not a traffic light. */
 export function confBand(conf: number): ConfBand {
   if (conf >= 0.95) return "high";
   if (conf >= 0.85) return "good";
@@ -92,10 +110,10 @@ export function confBand(conf: number): ConfBand {
 }
 
 export const CONF_COLOR: Record<ConfBand, string> = {
-  high: "#4ade80",
-  good: "#22d3ee",
-  fair: "#facc15",
-  low: "#94a3b8",
+  high: "#ffe9c7",
+  good: "#ffc24b",
+  fair: "#ff8a1f",
+  low: "#9a7358",
 };
 
 export function confColor(conf: number): string {
@@ -103,15 +121,43 @@ export function confColor(conf: number): string {
 }
 
 /**
- * Uncertain detections are never presented as facts. A track is "possible"
- * when the backend's temporal tier says so, when confidence sits under the
- * band floor, or when the tracker is coasting through an occlusion.
+ * POSSIBLE answers exactly one question: do we know WHAT this is?
+ *
+ * It used to answer two, and produced nonsense doing it — an exit sign seen
+ * clearly and then stepped behind rendered as "POSSIBLE EXIT SIGN 93%",
+ * hedging the identity of a thing whose identity was never in doubt. What
+ * had changed was visibility, not recognition. Two different facts were
+ * being pushed through one word, so the word stopped meaning either.
+ *
+ * The interface already had a separate channel for visibility, matching the
+ * rule this file opens with — colour and wording say what a thing IS, weight
+ * and dashing and opacity say how sure we are we can still see it. So:
+ *
+ *   POSSIBLE    identity is uncertain  -> name is hedged
+ *   stale       we've lost sight of it -> dashed, dimmed, tagged OCCLUDED
+ *
+ * Corroboration settles identity. A track a second independent modality
+ * agreed with — Lepton body heat, flame flicker, a classical egress match —
+ * is called by its name; everything else keeps the strict 0.70 bar.
  */
-export function isPossible(t: Pick<Track, "tier" | "conf" | "coasting">): boolean {
-  return t.tier === "possible" || t.conf < 0.7 || t.coasting;
+export function isPossible(
+  t: Pick<Track, "tier" | "conf" | "corroborated">
+): boolean {
+  if (t.tier === "possible") return true;
+  if (t.corroborated) return false;
+  return t.conf < 0.7;
 }
 
-export function displayLabel(t: Pick<Track, "display" | "tier" | "conf" | "coasting">): string {
+/** Render provisionally: identity is uncertain, or we've lost sight of it. */
+export function isProvisional(
+  t: Pick<Track, "tier" | "conf" | "corroborated" | "stale">
+): boolean {
+  return isPossible(t) || !!t.stale;
+}
+
+export function displayLabel(
+  t: Pick<Track, "display" | "tier" | "conf" | "corroborated">
+): string {
   // The tracker already prefixes its own "possible" tier (<0.50). The HUD
   // holds a stricter bar (<0.70), so it may need to add the prefix itself —
   // but never twice.
@@ -145,6 +191,28 @@ export function roleVisible(role: Role, mode: MissionMode): boolean {
 }
 
 // ------------------------------------------------------------------ format
+
+/** Human-readable name for the active perception backend.
+ *
+ * The wire value is an internal id — "sitl-truth" is meaningful to whoever
+ * wrote the simulator and to nobody else. Anything shown outside the training
+ * overlay goes through here, because a chief or an investor reading
+ * "SITL-TRUTH" on a status bar learns nothing except that this was built for
+ * its own authors. */
+export function detectorLabel(detector: string | undefined): string {
+  switch (detector) {
+    case "sitl-truth":
+      return "SIMULATION";
+    case "yolo-world":
+      return "YOLO-WORLD";
+    case "onnx":
+      return "YOLOV8 ONNX";
+    case "none":
+      return "CLASSICAL CV";
+    default:
+      return (detector ?? "—").toUpperCase();
+  }
+}
 
 export function ft(v: number | null | undefined): string {
   return v == null ? "—" : `${Math.round(v)} FT`;

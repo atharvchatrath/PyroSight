@@ -56,7 +56,7 @@ export default function CompassStrip({
           x2={t.x}
           y1={t.major ? 16 : 20}
           y2={26}
-          stroke="#8b9bab"
+          stroke="#a8815e"
           strokeOpacity={t.major ? 0.75 : 0.35}
           strokeWidth={1}
         />
@@ -70,7 +70,7 @@ export default function CompassStrip({
           fontSize={11}
           fontWeight={600}
           letterSpacing="0.1em"
-          fill={c.label === "N" ? COLOR.system : "#8b9bab"}
+          fill={c.label === "N" ? COLOR.system : "#a8815e"}
         >
           {c.label}
         </text>
@@ -85,7 +85,7 @@ export default function CompassStrip({
 
       {/* lubber line */}
       <line x1={width / 2} x2={width / 2} y1={4} y2={30} stroke={COLOR.nav} strokeWidth={1.5} />
-      <rect x={width / 2 - 26} y={-1} width={52} height={15} rx={7} fill="#050a10" fillOpacity={0.75} />
+      <rect x={width / 2 - 26} y={-1} width={52} height={15} rx={7} fill="#0d0704" fillOpacity={0.75} />
       <text
         x={width / 2}
         y={10}

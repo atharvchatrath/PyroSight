@@ -18,7 +18,7 @@ from typing import List, Optional, Tuple
 import cv2
 import numpy as np
 
-from .world import (AMBIENT_C, CAM_H, CORRIDOR_HALF_W, CORRIDOR_LEN, WALL_H,
+from .world import (AMBIENT_C, CORRIDOR_HALF_W, CORRIDOR_LEN, WALL_H,
                     SimWorld)
 
 RGB_FX = 522.0     # ~63 deg HFOV at 640 px

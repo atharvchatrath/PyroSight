@@ -22,7 +22,7 @@ Chromium kiosk on the monocular display.
 │  ══ asyncio boundary ═════════════════════════════════════════════════            │
 │        ▼                                                 ▼                        │
 │  /ws/telemetry (JSON @15Hz)                 /ws/video?feed=rgb|thermal|fused      │
-│  /api/* REST (config, commands, incidents, history)                               │
+│  /api/* REST (config, incidents, history)                                         │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -57,7 +57,7 @@ constant-velocity prediction. Result: 15–20 FPS HUD regardless of model speed.
   Return-to-entry walks the breadcrumb trail backwards. Hazards inside a
   ±25° forward cone within ~6 m degrade route status CLEAR→CAUTION→BLOCKED.
 - **Events vs state** — continuous values ride the 15 Hz state snapshot;
-  discrete happenings (alerts, new detections, command acks) ride a
+  discrete happenings (alerts, new detections, system notices) ride a
   monotonic-sequence ring so nothing is lost between polls.
 
 ## Failure & degradation matrix

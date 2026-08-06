@@ -4,7 +4,7 @@
 #   sudo bash deploy/install-pi.sh
 #
 # Installs to /opt/pyrosight, creates the service user, installs Python and
-# Node dependencies, exports the ONNX detector, downloads the offline voice
+# Node dependencies and exports the ONNX detector.
 # model, builds the UI, and enables auto-start units for the backend, the
 # frontend, and the helmet HUD kiosk. Finishes by verifying the services
 # actually answer — an installer that exits 0 on a dead system is worthless.
@@ -55,10 +55,10 @@ cd "$DEST"
 [[ -d .venv ]] || python3 -m venv .venv --system-site-packages
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q --prefer-binary -r backend/requirements.txt
-# Hardware + voice extras (best-effort: the platform degrades without them).
+# Hardware extras (best-effort: the platform degrades without them).
 .venv/bin/pip install -q --prefer-binary \
-    adafruit-circuitpython-bno08x vosk sounddevice pyserial || \
-    echo "WARN: some optional extras failed (IMU/voice/ESP32 may be unavailable)."
+    adafruit-circuitpython-bno08x pyserial || \
+    echo "WARN: some optional extras failed (IMU/ESP32 may be unavailable)."
 
 echo "== [4/8] ONNX detector export (full vocabulary preferred) =="
 if [[ ! -f backend/models/yolov8n.onnx ]]; then
@@ -70,16 +70,6 @@ if [[ ! -f backend/models/yolov8n.onnx ]]; then
         || echo "WARN: ONNX export failed — classical CV only until a model is provided."
 fi
 
-echo "== [5/8] Offline voice model (Vosk small-en, ~40 MB) =="
-if [[ ! -d backend/models/vosk ]]; then
-    mkdir -p backend/models
-    curl -fsSL -o /tmp/vosk.zip \
-        https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip \
-        && unzip -q -o /tmp/vosk.zip -d backend/models \
-        && mv -f backend/models/vosk-model-small-en-us-0.15 backend/models/vosk \
-        || echo "WARN: Vosk download failed — voice commands via dashboard only."
-    rm -f /tmp/vosk.zip
-fi
 
 echo "== [6/8] Frontend production build =="
 cd "$DEST/frontend"

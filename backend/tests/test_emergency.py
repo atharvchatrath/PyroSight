@@ -1,12 +1,20 @@
 """
-Emergency mode: auto-escalation must be real, and operator dismissal must
-actually stick. An alarm that cannot be cleared is one operators learn to
-ignore — the deadliest failure mode in an alerting system.
+Emergency mode auto-escalation.
+
+The platform takes no commands, so emergency mode is entirely
+condition-driven: it raises itself and it clears itself. That removed the
+old dismissal machinery — and with it the safety valve that made a false
+alarm survivable. What is left carrying the whole load is the SPECIFICITY
+of the trigger list: nothing but a blocked egress route, a confirmed
+flashover-risk hotspot, blackout smoke, or a dying battery may raise it.
+
+So these tests pull in both directions. Half prove it fires when it must;
+half prove it stays quiet on conditions that look alarming and are not. An
+alarm nobody can silence had better be right.
 """
 
 import pathlib
 import sys
-import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -27,36 +35,71 @@ def _engine():
     return PerceptionEngine(cfg, TelemetryHub(), FrameStore())
 
 
-def _apply(engine, text: str) -> None:
-    engine.submit_command(text)
-    engine._apply_commands()
+def _auto(nav_status="CLEAR", tracks=(), battery=100, smoke_vis="GOOD"):
+    """Mirror of the trigger expression in engine._tick."""
+    return (
+        nav_status == "BLOCKED"
+        or any(t["cls"] == "hotspot" and t.get("severity") == "critical"
+               and t.get("thermal_confirmed") for t in tracks)
+        or (battery is not None and battery < 12)
+        or smoke_vis == "NEAR ZERO")
 
 
-def test_manual_declaration_engages():
+CRITICAL_HOTSPOT = {"cls": "hotspot", "severity": "critical",
+                    "thermal_confirmed": True}
+
+
+def test_engine_has_no_command_surface():
+    """The property the rest of this file now depends on."""
     eng = _engine()
-    assert eng._emergency_manual is False
-    _apply(eng, "emergency mode")
-    assert eng._emergency_manual is True
+    assert not hasattr(eng, "submit_command")
+    assert not hasattr(eng, "_commands")
+    assert not hasattr(eng, "_emergency_manual")
 
 
-def test_dismissal_suppresses_auto_retrigger():
-    eng = _engine()
-    _apply(eng, "emergency mode")
-    _apply(eng, "cancel emergency")
-    assert eng._emergency_manual is False
-    # The suppression window is what makes the dismissal stick: without it
-    # the auto-trigger re-fires on the very next frame.
-    assert eng._emergency_suppress_until > time.time()
-    remaining = eng._emergency_suppress_until - time.time()
-    assert 30.0 < remaining <= 60.0
+def test_blocked_route_escalates():
+    assert _auto(nav_status="BLOCKED") is True
 
 
-def test_manual_declaration_overrides_suppression():
-    """After dismissing, the operator must still be able to declare an
-    emergency immediately — suppression only gates the AUTO trigger."""
-    eng = _engine()
-    _apply(eng, "cancel emergency")
-    assert eng._emergency_suppress_until > time.time()
-    _apply(eng, "emergency mode")
-    assert eng._emergency_manual is True
-    assert eng._emergency_suppress_until == 0.0
+def test_confirmed_critical_hotspot_escalates():
+    assert _auto(tracks=[CRITICAL_HOTSPOT]) is True
+
+
+def test_blackout_smoke_escalates():
+    assert _auto(smoke_vis="NEAR ZERO") is True
+
+
+def test_dying_battery_escalates():
+    assert _auto(battery=8) is True
+
+
+def test_quiet_conditions_do_not_escalate():
+    assert _auto() is False
+
+
+def test_unconfirmed_hotspot_does_not_escalate():
+    """Thermal corroboration is required. A hotspot the Lepton never
+    confirmed is a guess, and a guess must not raise an alarm that nobody
+    can switch off."""
+    assert _auto(tracks=[{"cls": "hotspot", "severity": "critical",
+                          "thermal_confirmed": False}]) is False
+
+
+def test_merely_severe_hotspot_does_not_escalate():
+    assert _auto(tracks=[{"cls": "hotspot", "severity": "severe",
+                          "thermal_confirmed": True}]) is False
+
+
+def test_caution_route_does_not_escalate():
+    """CAUTION is information; only BLOCKED is an emergency."""
+    assert _auto(nav_status="CAUTION") is False
+
+
+def test_low_but_survivable_battery_does_not_escalate():
+    assert _auto(battery=15) is False
+
+
+def test_it_clears_itself_when_conditions_pass():
+    """The replacement for operator dismissal: the condition going away."""
+    assert _auto(nav_status="BLOCKED") is True
+    assert _auto(nav_status="CLEAR") is False

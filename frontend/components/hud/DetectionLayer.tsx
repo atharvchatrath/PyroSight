@@ -18,7 +18,7 @@ import {
   colorOf,
   confColor,
   displayLabel,
-  isPossible,
+  isProvisional,
   isSuppressed,
   roleOf,
   roleVisible,
@@ -26,7 +26,15 @@ import {
 
 const LABEL_H = 18;
 const LABEL_PAD = 4;
-const CHAR_W = 6.5; // measured for the UI sans at 11.5px
+// Advance width per character of the chip text, MEASURED (getBBox) on the UI
+// sans at 11.5px / weight 700 / 0.05em tracking — it is 7.86px.
+//
+// This was 6.5, a 21% underestimate, and every chip was sized from it. The
+// longest labels are exactly the ones that overflowed: "POSSIBLE WINDOW EXIT
+// 52%" ran 28px past the end of its own background, so the confidence figure
+// sat on the bare video with no chip behind it — unreadable over a light
+// smoke-grey wall, on the label that was already the least certain.
+const CHAR_W = 7.9;
 // The eyebox is not a report. Five labels is roughly what can be read in one
 // glance; past that the display costs more attention than it returns.
 const MAX_LABELS = 5;
@@ -87,7 +95,10 @@ function labelText(t: RenderTrack, smoke: number,
     thermalOnly && smoke >= 0.35 ? "SEEN THROUGH SMOKE" : null,
     thermalOnly && smoke < 0.35 ? "NO VISUAL MATCH" : null,
     !thermalOnly && t.thermal_confirmed ? "THERM ✓" : null,
-    t.coasting ? "OCCLUDED" : null,
+    // `stale`, not `coasting`: the detector skipping a frame is its normal
+    // cadence, not an occlusion, and labelling it as one every other frame
+    // made the word meaningless.
+    t.stale ? "OCCLUDED" : null,
     // Why a person is uncertain matters more than that they are: a subject
     // with no independent motion may be an image — or an unconscious victim.
     // Hints that merely echo the class name (sim ground truth does this) say
@@ -230,7 +241,7 @@ function bracketPath(x1: number, y1: number, x2: number, y2: number): string {
 /** Person / firefighter: brackets + centre tick + soft halo. */
 function PersonMark({ t, color }: { t: RenderTrack; color: string }) {
   const [x1, y1, x2, y2] = t.rbox;
-  const possible = isPossible(t);
+  const possible = isProvisional(t);
   return (
     <g>
       <path d={bracketPath(x1, y1, x2, y2)} stroke={color} strokeWidth={4}
@@ -252,7 +263,7 @@ function PersonMark({ t, color }: { t: RenderTrack; color: string }) {
 /** Fire / hotspot: bracketed box, light fill, breathing outline. */
 function HazardMark({ t, color }: { t: RenderTrack; color: string }) {
   const [x1, y1, x2, y2] = t.rbox;
-  const possible = isPossible(t);
+  const possible = isProvisional(t);
   return (
     <g>
       <rect x={x1} y={y1} width={x2 - x1} height={y2 - y1} fill={color}
@@ -278,7 +289,7 @@ function DoorMark({
   emphasize: boolean;
 }) {
   const [x1, y1, x2, y2] = t.rbox;
-  const possible = isPossible(t);
+  const possible = isProvisional(t);
   return (
     <g>
       {emphasize && (
@@ -325,23 +336,23 @@ function UnknownMark({ t, color }: { t: RenderTrack; color: string }) {
 
 function LabelChip({ p, color, detail }: { p: Placed; color: string; detail: boolean }) {
   const t = p.t;
-  const possible = isPossible(t);
+  const possible = isProvisional(t);
   const cc = confColor(t.rconf);
   const barW = 16;
   return (
-    <g opacity={t.alpha}>
+    <g opacity={t.labelAlpha}>
       {/* Confirmed detections get a filled chip (fast to read), uncertain ones
           a dark chip with a coloured rule — visually subordinate on purpose. */}
       <rect x={p.x} y={p.y} width={p.w} height={LABEL_H}
-        fill={possible ? "#070c12" : color} fillOpacity={possible ? 0.88 : 0.92}
+        fill={possible ? "#100904" : color} fillOpacity={possible ? 0.88 : 0.92}
         stroke={possible ? color : "none"} strokeOpacity={0.55} strokeWidth={1} />
       <rect x={p.x} y={p.y} width={2.5} height={LABEL_H} fill={cc} />
       <rect x={p.x + LABEL_PAD + 2} y={p.y + LABEL_H / 2 - 2} width={barW} height={4}
-        fill={possible ? "#ffffff" : "#04070a"} fillOpacity={0.22} />
+        fill={possible ? "#ffffff" : "#0a0603"} fillOpacity={0.22} />
       <rect x={p.x + LABEL_PAD + 2} y={p.y + LABEL_H / 2 - 2}
         width={Math.max(1.5, barW * Math.min(1, t.rconf))} height={4} fill={cc} />
       <text x={p.x + LABEL_PAD + barW + 7} y={p.y + LABEL_H / 2 + 4} fontSize={11.5}
-        fontWeight={700} letterSpacing="0.05em" fill={possible ? "#e8f0f6" : "#04070a"}>
+        fontWeight={700} letterSpacing="0.05em" fill={possible ? "#ffeedd" : "#0a0603"}>
         {p.text}
       </text>
       {p.sub && (
@@ -355,7 +366,7 @@ function LabelChip({ p, color, detail }: { p: Placed; color: string; detail: boo
         // why a label degraded rather than guessing. Laid out by `layout`, so
         // the collision solver knows this line exists.
         <text x={p.x + 1} y={p.y + LABEL_H + (p.sub ? 22 : 11)} fontSize={9}
-          letterSpacing="0.07em" fill="#94a3b8">
+          letterSpacing="0.07em" fill="#9a7358">
           {p.detail}
         </text>
       )}

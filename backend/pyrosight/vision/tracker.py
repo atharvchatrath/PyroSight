@@ -8,9 +8,9 @@ evidence over frames:
   * temporal confidence = EMA of detection confidence, with a persistence
     bonus as hits accumulate and exponential decay while coasting
   * display tier derived from temporal confidence:
-        confirmed  (>= 0.75)  ->  "PERSON 92%"
-        likely     (>= 0.50)  ->  "PERSON 61%"
-        possible   (<  0.50)  ->  "POSSIBLE PERSON 38%"
+        confirmed  (>= 0.75)  ->  "HUMAN 92%"
+        likely     (>= 0.50)  ->  "HUMAN 61%"
+        possible   (<  0.50)  ->  "POSSIBLE HUMAN 38%"
     Communicating uncertainty is a hard product requirement: a low-evidence
     track must *look* uncertain on the HUD, never certain.
 
@@ -22,7 +22,6 @@ wide-ish FOV at 640 px).
 from __future__ import annotations
 
 import itertools
-import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..config import TrackerConfig, VisionConfig
@@ -53,6 +52,31 @@ def _containment(inner, outer) -> float:
 # A detection mostly inside an existing track's box (or vice versa) is the
 # same object with a re-cropped box, not a new one.
 NEST_MATCH = 0.70
+
+# Certainty bonuses — see Track.certainty(). Both are gated on independent
+# corroboration; neither applies without it.
+CORROBORATION_BONUS = 0.12
+PERSISTENCE_BONUS = 0.08
+
+# Cross-class track competition (see TemporalTracker._resolve_conflicts).
+# Looser than same-class association: two classes fighting over one object
+# agree on roughly where it is, rarely on exactly where its edges are.
+CONFLICT_IOU = 0.40
+CONFLICT_CONTAINMENT = 0.72
+
+# Consecutive missed associations before a track is *stale* — genuinely
+# unseen rather than merely between detector passes.
+#
+# `coasting` (misses > 0) is not that signal and must not be used as one. The
+# detector runs every Nth frame by design (vision.detect_every_n), so at the
+# default cadence a perfectly healthy track is coasting roughly half the time.
+# Treating that as doubt made confirmed detections strobe between "DOOR" and
+# "POSSIBLE DOOR" at several hertz — which reads as a system that cannot make
+# up its mind, on a display whose entire job is to be decided.
+#
+# Three misses is about a third of a second of an object not being where the
+# tracker predicted it. That is a real occlusion, and worth saying.
+STALE_MISSES = 3
 
 
 # Monocular pinhole ranging is only meaningful over a limited band. A
@@ -159,10 +183,47 @@ class Track:
     def confirmed_track(self) -> bool:
         return self.hits >= self.cfg.confirm_hits
 
+    @property
+    def corroborated(self) -> bool:
+        """A second, independent witness agreed about this object."""
+        return self.thermal_confirmed or self.rgb_corroborated
+
+    def certainty(self) -> float:
+        """Belief that the CLASS CALL is correct — the operator-facing number.
+
+        `self.conf` is what the detector thinks of this frame's pixels,
+        smoothed. It is not the same question. A body at the far end of a
+        smoke-filled corridor scores badly on pixels and is still, beyond
+        reasonable doubt, a human — because the thermal sensor independently
+        found a 34°C mass in the same place and has agreed for two seconds.
+
+        So certainty adds what pixel confidence structurally cannot see:
+
+          * corroboration — a second modality (Lepton body heat, flicker
+            analysis, classical egress detection) that can fail in ways the
+            detector cannot, agreeing anyway
+          * persistence — an unbroken track across a moving camera, which a
+            transient artefact does not survive
+
+        The load-bearing rule is the guard clause: with NO independent
+        witness, certainty IS conf. Uncorroborated evidence never gets
+        promoted no matter how long it persists, which is what stops a
+        sustained hallucination from compounding into a confident alarm.
+        That property is enforced by test_tracker.py.
+        """
+        if not self.corroborated:
+            return self.conf
+        bonus = CORROBORATION_BONUS
+        if self.misses < STALE_MISSES:
+            mature = (self.hits - 2 * self.cfg.confirm_hits) / 12.0
+            bonus += PERSISTENCE_BONUS * max(0.0, min(1.0, mature))
+        return min(0.99, self.conf + bonus)
+
     def tier(self, vis: VisionConfig) -> str:
-        if self.conf >= vis.confirmed_conf:
+        certainty = self.certainty()
+        if certainty >= vis.confirmed_conf:
             return "confirmed"
-        if self.conf >= vis.likely_conf:
+        if certainty >= vis.likely_conf:
             return "likely"
         return "possible"
 
@@ -178,7 +239,12 @@ class Track:
             "priority": dc.priority,
             "color": dc.color,
             "box": [round(v, 1) for v in self.box],
-            "conf": round(self.conf, 3),
+            # The published figure is certainty: it is the one the HUD prints
+            # next to the label, and the label must mean what the number says.
+            # The detector's own smoothed score stays available as raw_conf
+            # for diagnostics and the training overlay.
+            "conf": round(self.certainty(), 3),
+            "raw_conf": round(self.conf, 3),
             "tier": tier,
             "thermal_confirmed": self.thermal_confirmed,
             "corroborated": self.thermal_confirmed or self.rgb_corroborated,
@@ -191,7 +257,12 @@ class Track:
             # mistakes an assumption for a measurement.
             "range_source": "stereo" if self.range_measured else "mono",
             "age": self.age,
+            # `coasting` drives the HUD's motion extrapolation — it wants to
+            # know about a single missed frame. `stale` drives what the HUD
+            # SAYS, and it must not fire on the detector's normal cadence.
             "coasting": self.misses > 0,
+            "stale": self.misses >= STALE_MISSES,
+            "misses": self.misses,
             "label_hint": self.label_hint,
         }
 
@@ -241,16 +312,58 @@ class TemporalTracker:
             if ti not in taken_tracks:
                 tr.coast()
 
+        # The second half of the hysteresis (see classes.KEEP_RATIO). Every
+        # detection that reached here was good enough to SUSTAIN a track, and
+        # the loop above has already used them to do exactly that. Opening a
+        # NEW track is the stronger claim, so it needs the full floor: a
+        # detection flagged `weak` may keep a victim on the display, but it
+        # may not invent one.
         for j in range(len(detections)):
-            if j not in taken_dets:
-                self.tracks.append(Track(detections[j], self.cfg, frame_w))
+            if j in taken_dets or detections[j].get("weak"):
+                continue
+            self.tracks.append(Track(detections[j], self.cfg, frame_w))
 
         self.tracks = [t for t in self.tracks
                        if t.misses <= self.cfg.max_misses and t.conf > 0.10]
 
         visible = [t.to_dict(self.vis) for t in self.tracks if t.confirmed_track]
+        visible = self._resolve_conflicts(visible)
         visible.sort(key=lambda d: (-d["priority"], -d["conf"]))
         return visible
+
+    @staticmethod
+    def _resolve_conflicts(visible: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """One object, one answer — decided on accumulated evidence.
+
+        detector.resolve_class_conflicts settles this within a single frame,
+        but two competing tracks can still both establish themselves over
+        time: the detector calls a wall opening a door on odd frames and a
+        window on even ones, each wins its own frame, and both tracks mature.
+        The HUD then shows a stacked pair and the operator is the one asked to
+        decide — which is the whole failure this pass exists to prevent.
+
+        Here the judgement uses temporal evidence rather than one frame's
+        pixels, so it is the more reliable of the two passes: whichever track
+        has accumulated the stronger corroborated certainty keeps the object.
+        Only classes the taxonomy declares mutually exclusive compete.
+        """
+        ordered = sorted(
+            visible,
+            key=lambda d: -d["conf"] * taxonomy.CLASS_PRIOR.get(d["cls"], 1.0))
+        kept: List[Dict[str, Any]] = []
+        for d in ordered:
+            beaten = False
+            for k in kept:
+                if not taxonomy.conflicts(d["cls"], k["cls"]):
+                    continue
+                if (_iou(d["box"], k["box"]) >= CONFLICT_IOU
+                        or _containment(d["box"], k["box"]) >= CONFLICT_CONTAINMENT
+                        or _containment(k["box"], d["box"]) >= CONFLICT_CONTAINMENT):
+                    beaten = True
+                    break
+            if not beaten:
+                kept.append(d)
+        return kept
 
     def count(self, cls_name: str) -> int:
         return sum(1 for t in self.tracks

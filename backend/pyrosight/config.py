@@ -14,7 +14,6 @@ import platform
 import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Optional
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BACKEND_ROOT.parent
@@ -103,15 +102,6 @@ class MeshConfig:
 
 
 @dataclass
-class AudioConfig:
-    """Offline TTS guidance for zero-visibility conditions — no cloud calls,
-    consistent with the rest of the platform."""
-    enabled: bool = _env_bool("AUDIO_ENABLED", True)
-    instruction_interval_s: float = _env_float("AUDIO_INSTRUCTION_INTERVAL_S", 5.0)
-    alert_cooldown_s: float = _env_float("AUDIO_ALERT_COOLDOWN_S", 8.0)
-
-
-@dataclass
 class VisionConfig:
     # Detector chain: onnx -> ultralytics -> none. Sim mode uses ground truth.
     onnx_model: str = _env("ONNX_MODEL", str(MODELS_DIR / "yolov8n.onnx"))
@@ -133,6 +123,23 @@ class VisionConfig:
     critical_temp_c: float = _env_float("CRITICAL_TEMP_C", 450.0)
     body_temp_lo_c: float = 28.0
     body_temp_hi_c: float = 40.0
+    # BENCH TESTING ONLY — PYROSIGHT_ALLOW_SCREENS=1.
+    #
+    # The platform deliberately refuses to call a person on a monitor, a
+    # poster or a photograph a victim: vision/spoof.py rejects a subject
+    # enclosed by a screen bezel or picture frame, and the decoy prompts in
+    # vision/classes.py give the model a truer label for it. On a fireground
+    # that is correct and load-bearing — the failure it prevents is sending a
+    # crew to a wall.
+    #
+    # It also means the obvious way to test indoors (hold up a phone, point
+    # at a laptop, print a picture of a door) is met with a system that
+    # detects the thing and then throws it away, which looks exactly like a
+    # bug. This flag turns both defences off so bench testing works. It
+    # defaults OFF, it is never set by any launcher, and the HUD says
+    # BENCH MODE while it is on, because a helmet running this on a real
+    # incident would be actively dangerous.
+    allow_screens: bool = _env_bool("ALLOW_SCREENS", False)
 
 
 @dataclass
@@ -182,7 +189,6 @@ class PyroSightConfig:
     engine: EngineConfig = field(default_factory=EngineConfig)
     physio: PhysioConfig = field(default_factory=PhysioConfig)
     mesh: MeshConfig = field(default_factory=MeshConfig)
-    audio: AudioConfig = field(default_factory=AudioConfig)
     platform: str = field(default_factory=platform_name)
 
     def resolved_mode(self) -> str:

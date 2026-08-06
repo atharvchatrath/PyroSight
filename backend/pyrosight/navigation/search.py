@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 CELL_M = 0.75
 GRID_RADIUS_CELLS = 24     # +/- 18 m around entry

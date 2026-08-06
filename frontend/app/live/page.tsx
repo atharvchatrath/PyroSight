@@ -9,16 +9,16 @@
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 import VideoCanvas from "@/components/VideoCanvas";
-import CommandBar from "@/components/dashboard/CommandBar";
 import MiniMap from "@/components/hud/MiniMap";
 import { useTelemetry } from "@/lib/useTelemetry";
 import { useUplink } from "@/lib/uplink";
+import Wordmark from "@/components/Wordmark";
+import { detectorLabel } from "@/lib/design";
 
 export default function LiveTestPage() {
-  const { state, events, connected, sendCommand } = useTelemetry();
+  const { state, connected } = useTelemetry();
   const { running, sent, error, stream, start, stop } = useUplink();
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const lastAck = [...events].reverse().find((e) => e.kind === "command");
 
   // Mirror the shared stream into this page's preview element.
   useEffect(() => {
@@ -34,10 +34,8 @@ export default function LiveTestPage() {
   return (
     <main className="min-h-screen p-4 flex flex-col gap-4">
       <header className="flex items-center gap-4 flex-wrap">
-        <Link href="/" className="text-xl font-bold tracking-[0.3em] text-bright">
-          PYRO<span className="text-danger">SIGHT</span>
-        </Link>
-        <span className="text-dim text-xs tracking-widest">LIVE CAMERA TEST</span>
+        <Wordmark size="md" />
+        <span className="cap">Live demo · this device’s camera</span>
         <span
           className={`text-xs px-2 py-1 rounded border ${
             connected ? "border-ok text-ok" : "border-danger text-danger animate-alarm"
@@ -111,7 +109,7 @@ export default function LiveTestPage() {
 
         <section className="panel">
           <h2 className="panel-title">
-            AI output (fused view{state ? ` — ${state.detector.toUpperCase()}` : ""})
+            AI output — fused view{state ? ` · ${detectorLabel(state.detector)}` : ""}
           </h2>
           <div className="p-2 flex flex-col gap-2">
             {/* Same overlay furniture as the helmet HUD: status details
@@ -139,20 +137,6 @@ export default function LiveTestPage() {
         </section>
       </div>
 
-      {/* Voice / command control, same grammar as the helmet unit. */}
-      <section className="panel">
-        <h2 className="panel-title">
-          Voice / Command
-          {lastAck && (
-            <span className="ml-3 text-accent normal-case tracking-normal">
-              ◂ {lastAck.ack}
-            </span>
-          )}
-        </h2>
-        <div className="p-3">
-          <CommandBar onCommand={sendCommand} />
-        </div>
-      </section>
     </main>
   );
 }

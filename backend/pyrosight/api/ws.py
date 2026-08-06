@@ -1,10 +1,10 @@
 """
 WebSocket channels.
 
-  /ws/telemetry — JSON. Server pushes {type:"state"} at telemetry_hz plus
-                  {type:"event"} for everything new since the client's last
-                  delivery (alerts, detections, command acks). Clients may
-                  send {type:"command", text:"find exit"}.
+  /ws/telemetry — JSON, server -> client only. Pushes {type:"state"} at
+                  telemetry_hz plus {type:"event"} for everything new since
+                  the client's last delivery (alerts, detections, system
+                  notices). Anything a client sends is discarded.
   /ws/video     — binary JPEG frames for ?feed=rgb|thermal|fused at
                   video_hz, skipping resends when the frame hasn't changed.
 
@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 
@@ -40,14 +38,12 @@ def build_ws_router(engine, hub, frames) -> APIRouter:
             last_event_seq = history[-1]["seq"]
 
         async def receiver() -> None:
+            """Drain and discard. The channel carries nothing inbound now,
+            but something must keep reading: without a reader the disconnect
+            frame is never processed, so a closed tab is only noticed on the
+            next failed send, and a chatty client backs up in the buffer."""
             while True:
-                raw = await ws.receive_text()
-                try:
-                    msg: Dict[str, Any] = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                if msg.get("type") == "command" and isinstance(msg.get("text"), str):
-                    engine.submit_command(msg["text"][:200])
+                await ws.receive_text()
 
         recv_task = asyncio.create_task(receiver())
         try:
